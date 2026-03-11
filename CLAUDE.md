@@ -49,7 +49,7 @@ MinerU 解析的 Markdown 保留了高质量公式（LaTeX）和图片附件（`
 | `vectors.py` | Qwen3 语义向量 + FAISS 增量索引 |
 | `topics.py` | BERTopic 主题建模 + 6 种 HTML 可视化 |
 | `loader.py` | L1-L4 分层加载 + enrich_toc + enrich_l3 |
-| `explore.py` | 期刊全量探索（OpenAlex + 嵌入 + 主题，数据隔离在 `data/explore/`） |
+| `explore.py` | 多维文献探索（OpenAlex 多维过滤 + FTS5 + 语义 + 融合检索 + 主题，数据隔离在 `data/explore/`） |
 | `workspace.py` | 工作区论文子集管理（复用搜索/导出） |
 | `export.py` | BibTeX 导出 |
 | `audit.py` | 数据质量审计 + 修复 |
@@ -79,10 +79,12 @@ PDF → mineru.py → .md     （或直接放 .md 跳过 MinerU）
                    ↓
              cli.py → .claude/skills/ → Claude Code
 
-explore.py — 期刊全量探索（独立数据流，与主库隔离）
-  OpenAlex API → data/explore/<name>/papers.jsonl
-                 → explore.db (paper_vectors)
+explore.py — 多维文献探索（独立数据流，与主库隔离）
+  OpenAlex API（多维过滤：ISSN/concept/author/institution/keyword/source-type 等）
+    → data/explore/<name>/papers.jsonl（支持增量更新，DOI 去重追加）
+                 → explore.db (paper_vectors + FTS5 全文索引)
                  → faiss.index (FAISS 语义检索)
+  搜索：语义 / 关键词(FTS5) / 融合(RRF) 三种模式
   主题建模/可视化/查询复用 topics.py（通过 papers_map 参数）
                  → topic_model/ (BERTopic, 统一格式) + viz/ (HTML)
 
@@ -141,6 +143,23 @@ data/inbox-thesis/
 注：普通 inbox 中无 DOI 的论文会由 LLM 自动判断是否为 thesis——是则标记入库，否则转 pending。
 thesis inbox 跳过此判断，直接标记入库。
 
+### data/inbox-doc/ 目录
+
+```
+data/inbox-doc/
+├── report.pdf    # 非论文文档 PDF（技术报告、标准、讲义等）
+└── notes.md      # 或直接放 .md
+```
+
+非论文文档入库流程：
+- 跳过 DOI 去重和 API 查询
+- LLM 自动生成标题和摘要（确保检索可用）
+- 无 LLM 时降级：第一个 markdown 标题或文件名 → 标题，前 500 词 → 摘要
+- paper_type 标记为 `document`（或 `technical-report` / `lecture-notes` 等具体类型）
+- 审计规则对 document 类型不报 missing_doi 警告
+
+超长 PDF（默认 >100 页）自动切分为多个短 PDF 分段解析后合并。
+
 ### data/pending/ 目录
 
 ```
@@ -165,8 +184,8 @@ pending.json 中 `issue` 字段标识原因：
 ```
 data/explore/<name>/
 ├── papers.jsonl        # OpenAlex 拉取的全量论文（title/abstract/authors/year/doi/cited_by_count）
-├── meta.json           # 探索库元信息（issn/count/fetched_at）
-├── explore.db          # SQLite（paper_vectors 表，Qwen3 嵌入）
+├── meta.json           # 探索库元信息（查询参数/count/fetched_at）
+├── explore.db          # SQLite（paper_vectors 表 + explore_fts FTS5 全文索引）
 ├── faiss.index         # FAISS IndexFlatIP（cosine similarity）
 ├── faiss_ids.json      # FAISS index 对应的 paper_id 列表
 └── topic_model/
@@ -213,11 +232,11 @@ Skills 定义在 `.claude/skills/` 目录，遵循 [Agent Skills](https://agents
 - `enrich` — 富化论文内容（TOC / 结论 / 摘要 / 引用量）
 - `ingest` — 入库论文 + 索引重建（pipeline 预设）
 - `topics` — 主题探索（BERTopic 聚类 + 合并 + 可视化）
-- `explore` — 期刊全量探索（OpenAlex + FAISS + BERTopic）
+- `explore` — 多维文献探索（OpenAlex 多维过滤 + FTS5/语义/融合检索 + BERTopic）
 - `graph` — 引用图谱查询
 - `citations` — 引用量查询和补查
 - `index` — 重建 FTS5 / FAISS 索引
-- `workspace` — 工作区管理
+- `workspace` — 工作区管理（创建 / 添加 / 搜索 / 导出）
 - `export` — BibTeX 导出
 - `import` — Endnote / Zotero 导入
 - `rename` — 论文文件重命名
