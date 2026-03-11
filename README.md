@@ -70,7 +70,7 @@ The knowledge base is the foundation; what your agent builds on top of it is ope
 
 ## Works With Your Agent
 
-ScholarAIO is designed to be **agent-agnostic**. It currently ships with configuration for 7 agents and IDEs:
+ScholarAIO is designed to be **agent-agnostic**. It currently ships with configuration for multiple agents and IDEs:
 
 | Agent / IDE | Integration | Config file |
 |-------------|-------------|-------------|
@@ -166,7 +166,7 @@ scholaraio metrics            View LLM usage stats
 
 ```
 scholaraio/          # Python package
-  cli.py             # CLI entry point (30 subcommands)
+  cli.py             # CLI entry point (29 subcommands)
   mcp_server.py      # MCP server (31 tools)
   ingest/            # PDF parsing + metadata pipeline
   index.py           # FTS5 full-text search
