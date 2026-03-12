@@ -985,14 +985,9 @@ def run_pipeline(
 
                 ui(f"  (concurrency: {workers} workers)")
                 with ThreadPoolExecutor(max_workers=workers) as pool:
-                    futures = {
-                        pool.submit(_process_one_paper, jp): jp
-                        for jp in json_paths
-                    }
-                    done_count = 0
-                    for fut in as_completed(futures):
+                    futures = {pool.submit(_process_one_paper, jp): jp for jp in json_paths}
+                    for done_count, fut in enumerate(as_completed(futures), 1):
                         jp = futures[fut]
-                        done_count += 1
                         try:
                             status, timings = fut.result()
                         except Exception:
