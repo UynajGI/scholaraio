@@ -29,10 +29,15 @@ def _read(ws_dir: Path) -> list[dict]:
     if not pj.exists():
         return []
     try:
-        return json.loads(pj.read_text(encoding="utf-8"))
+        raw = json.loads(pj.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
         _log.error("papers.json 格式损坏 (%s): %s", pj, e)
         return []
+    # Filter out malformed entries missing required "id" field
+    valid = [e for e in raw if isinstance(e, dict) and "id" in e]
+    if len(valid) < len(raw):
+        _log.warning("papers.json 中有 %d 条缺少 id 的记录已跳过 (%s)", len(raw) - len(valid), pj)
+    return valid
 
 
 def _write(ws_dir: Path, entries: list[dict]) -> None:
@@ -81,7 +86,7 @@ def add(ws_dir: Path, paper_refs: list[str], db_path: Path) -> list[dict]:
     from scholaraio.index import lookup_paper
 
     entries = _read(ws_dir)
-    existing_ids = {e["id"] for e in entries if "id" in e}
+    existing_ids = {e["id"] for e in entries}
     added: list[dict] = []
     now = datetime.now(timezone.utc).isoformat()
 
@@ -184,7 +189,7 @@ def read_paper_ids(ws_dir: Path) -> set[str]:
     Returns:
         UUID 字符串集合，用于搜索过滤。
     """
-    return {e["id"] for e in _read(ws_dir) if "id" in e}
+    return {e["id"] for e in _read(ws_dir)}
 
 
 def read_dir_names(ws_dir: Path, db_path: Path) -> set[str]:

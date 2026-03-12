@@ -580,7 +580,7 @@ def build_topics(
             )
 
         overview = get_topic_overview(model)
-        topics_list = getattr(model, "_topics", [])
+        topics_list = getattr(model, "_topics", None) or getattr(model, "topics_", [])
         n_outliers = sum(1 for t in topics_list if t == -1)
         return json.dumps({
             "topics": len(overview),
