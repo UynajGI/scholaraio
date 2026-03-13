@@ -411,18 +411,33 @@ def call_llm(
     try:
         if backend == "anthropic":
             content, tokens_in, tokens_out, tokens_total, model_name = _call_anthropic(
-                prompt, llm_cfg, resolved_key, system=system,
-                json_mode=json_mode, max_tokens=max_tokens, timeout=_timeout,
+                prompt,
+                llm_cfg,
+                resolved_key,
+                system=system,
+                json_mode=json_mode,
+                max_tokens=max_tokens,
+                timeout=_timeout,
             )
         elif backend == "google":
             content, tokens_in, tokens_out, tokens_total, model_name = _call_google(
-                prompt, llm_cfg, resolved_key, system=system,
-                json_mode=json_mode, max_tokens=max_tokens, timeout=_timeout,
+                prompt,
+                llm_cfg,
+                resolved_key,
+                system=system,
+                json_mode=json_mode,
+                max_tokens=max_tokens,
+                timeout=_timeout,
             )
         else:
             content, tokens_in, tokens_out, tokens_total, model_name = _call_openai_compat(
-                prompt, llm_cfg, resolved_key, system=system,
-                json_mode=json_mode, max_tokens=max_tokens, timeout=_timeout,
+                prompt,
+                llm_cfg,
+                resolved_key,
+                system=system,
+                json_mode=json_mode,
+                max_tokens=max_tokens,
+                timeout=_timeout,
             )
     except Exception:
         status = "error"
