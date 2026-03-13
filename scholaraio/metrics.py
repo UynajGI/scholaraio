@@ -401,45 +401,29 @@ def call_llm(
     if not resolved_key:
         raise RuntimeError("未配置 LLM API key。")
 
-    url = llm_cfg.base_url.rstrip("/") + "/v1/chat/completions"
-
-    messages: list[dict[str, str]] = []
-    if system:
-        messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": prompt})
-
-    payload: dict[str, Any] = {
-        "model": llm_cfg.model,
-        "messages": messages,
-        "temperature": 0,
-        "max_tokens": max_tokens,
-    }
-    if json_mode:
-        payload["response_format"] = {"type": "json_object"}
-
-    headers = {
-        "Authorization": f"Bearer {resolved_key}",
-        "Content-Type": "application/json",
-    }
+    backend = llm_cfg.backend
+    _timeout = timeout or llm_cfg.timeout
 
     t0 = time.monotonic()
     status = "ok"
     tokens_in = tokens_out = tokens_total = 0
     model_name = llm_cfg.model
     try:
-        resp = requests.post(url, json=payload, headers=headers, timeout=timeout or llm_cfg.timeout)
-        resp.raise_for_status()
-        data = resp.json()
-        try:
-            content = data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError) as e:
-            snippet = _json.dumps(data, ensure_ascii=False)[:300]
-            raise ValueError(f"Unexpected API response structure: {e}\n{snippet}") from e
-        usage = data.get("usage") or {}
-        tokens_in = usage.get("prompt_tokens", 0)
-        tokens_out = usage.get("completion_tokens", 0)
-        tokens_total = usage.get("total_tokens", 0)
-        model_name = data.get("model", llm_cfg.model)
+        if backend == "anthropic":
+            content, tokens_in, tokens_out, tokens_total, model_name = _call_anthropic(
+                prompt, llm_cfg, resolved_key, system=system,
+                json_mode=json_mode, max_tokens=max_tokens, timeout=_timeout,
+            )
+        elif backend == "google":
+            content, tokens_in, tokens_out, tokens_total, model_name = _call_google(
+                prompt, llm_cfg, resolved_key, system=system,
+                json_mode=json_mode, max_tokens=max_tokens, timeout=_timeout,
+            )
+        else:
+            content, tokens_in, tokens_out, tokens_total, model_name = _call_openai_compat(
+                prompt, llm_cfg, resolved_key, system=system,
+                json_mode=json_mode, max_tokens=max_tokens, timeout=_timeout,
+            )
     except Exception:
         status = "error"
         raise
@@ -473,3 +457,146 @@ def call_llm(
         model=model_name,
         duration_s=duration,
     )
+
+
+def _call_openai_compat(
+    prompt: str,
+    llm_cfg: "LLMConfig",
+    api_key: str,
+    *,
+    system: str | None,
+    json_mode: bool,
+    max_tokens: int,
+    timeout: int,
+) -> tuple[str, int, int, int, str]:
+    """OpenAI-compatible /v1/chat/completions（DeepSeek / OpenAI / vLLM / Ollama 等）。"""
+    url = llm_cfg.base_url.rstrip("/") + "/v1/chat/completions"
+
+    messages: list[dict[str, str]] = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+
+    payload: dict[str, Any] = {
+        "model": llm_cfg.model,
+        "messages": messages,
+        "temperature": 0,
+        "max_tokens": max_tokens,
+    }
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    resp = requests.post(url, json=payload, headers=headers, timeout=timeout)
+    resp.raise_for_status()
+    data = resp.json()
+    try:
+        content = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as e:
+        snippet = _json.dumps(data, ensure_ascii=False)[:300]
+        raise ValueError(f"Unexpected API response structure: {e}\n{snippet}") from e
+    usage = data.get("usage") or {}
+    tokens_in = usage.get("prompt_tokens", 0)
+    tokens_out = usage.get("completion_tokens", 0)
+    tokens_total = usage.get("total_tokens", 0)
+    model_name = data.get("model", llm_cfg.model)
+    return content, tokens_in, tokens_out, tokens_total, model_name
+
+
+def _call_anthropic(
+    prompt: str,
+    llm_cfg: "LLMConfig",
+    api_key: str,
+    *,
+    system: str | None,
+    json_mode: bool,
+    max_tokens: int,
+    timeout: int,
+) -> tuple[str, int, int, int, str]:
+    """Anthropic Messages API（/v1/messages）。"""
+    url = llm_cfg.base_url.rstrip("/") + "/v1/messages"
+
+    messages: list[dict[str, str]] = [{"role": "user", "content": prompt}]
+
+    payload: dict[str, Any] = {
+        "model": llm_cfg.model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": 0,
+    }
+    if system:
+        payload["system"] = system
+    # Anthropic does not have response_format; json_mode is handled via prompt
+
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+    }
+
+    resp = requests.post(url, json=payload, headers=headers, timeout=timeout)
+    resp.raise_for_status()
+    data = resp.json()
+    try:
+        content = data["content"][0]["text"]
+    except (KeyError, IndexError, TypeError) as e:
+        snippet = _json.dumps(data, ensure_ascii=False)[:300]
+        raise ValueError(f"Unexpected Anthropic response structure: {e}\n{snippet}") from e
+    usage = data.get("usage") or {}
+    tokens_in = usage.get("input_tokens", 0)
+    tokens_out = usage.get("output_tokens", 0)
+    tokens_total = tokens_in + tokens_out
+    model_name = data.get("model", llm_cfg.model)
+    return content, tokens_in, tokens_out, tokens_total, model_name
+
+
+def _call_google(
+    prompt: str,
+    llm_cfg: "LLMConfig",
+    api_key: str,
+    *,
+    system: str | None,
+    json_mode: bool,
+    max_tokens: int,
+    timeout: int,
+) -> tuple[str, int, int, int, str]:
+    """Google Gemini API（/v1beta/models/...）。"""
+    base = llm_cfg.base_url.rstrip("/")
+    url = f"{base}/v1beta/models/{llm_cfg.model}:generateContent?key={api_key}"
+
+    contents: list[dict[str, Any]] = []
+    if system:
+        contents.append({"role": "user", "parts": [{"text": system}]})
+        contents.append({"role": "model", "parts": [{"text": "Understood."}]})
+    contents.append({"role": "user", "parts": [{"text": prompt}]})
+
+    payload: dict[str, Any] = {
+        "contents": contents,
+        "generationConfig": {
+            "temperature": 0,
+            "maxOutputTokens": max_tokens,
+        },
+    }
+    if json_mode:
+        payload["generationConfig"]["responseMimeType"] = "application/json"
+
+    headers = {"Content-Type": "application/json"}
+
+    resp = requests.post(url, json=payload, headers=headers, timeout=timeout)
+    resp.raise_for_status()
+    data = resp.json()
+    try:
+        content = data["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError, TypeError) as e:
+        snippet = _json.dumps(data, ensure_ascii=False)[:300]
+        raise ValueError(f"Unexpected Gemini response structure: {e}\n{snippet}") from e
+    usage = data.get("usageMetadata") or {}
+    tokens_in = usage.get("promptTokenCount", 0)
+    tokens_out = usage.get("candidatesTokenCount", 0)
+    tokens_total = usage.get("totalTokenCount", tokens_in + tokens_out)
+    model_name = llm_cfg.model
+    return content, tokens_in, tokens_out, tokens_total, model_name
