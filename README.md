@@ -158,6 +158,7 @@ scholaraio import-zotero      Import from Zotero
 scholaraio attach-pdf         Attach PDF to existing paper
 scholaraio setup              Setup wizard
 scholaraio metrics            View LLM usage stats
+scholaraio migrate-dirs       Migrate flat paper dirs to per-paper structure
 ```
 
 </details>
@@ -166,17 +167,22 @@ scholaraio metrics            View LLM usage stats
 
 ```
 scholaraio/          # Python package
-  cli.py             # CLI entry point (29 subcommands)
+  cli.py             # CLI entry point (30 subcommands)
   mcp_server.py      # MCP server (31 tools)
+  config.py          # Configuration loading (YAML + path resolution)
+  papers.py          # Paper path helpers (UUID → directory mapping)
   ingest/            # PDF parsing + metadata pipeline
   index.py           # FTS5 full-text search
-  vectors.py         # Qwen3 semantic embeddings + FAISS
+  vectors.py         # Qwen3 semantic embeddings + FAISS + GPU adaptive batching
   topics.py          # BERTopic topic modeling
   loader.py          # L1-L4 layered paper loading
-  explore.py         # OpenAlex journal exploration
+  explore.py         # Multi-dimensional literature exploration (OpenAlex + search + topics)
   workspace.py       # Workspace management
   export.py          # BibTeX export
   audit.py           # Data quality auditing
+  sources/           # Data source adapters (local / Endnote / Zotero)
+  metrics.py         # LLM token usage + API timing
+  setup.py           # Environment detection + setup wizard
 
 .claude/skills/      # 22 agent skills (AgentSkills.io format)
 .agents/skills/      # ↑ symlink for cross-agent discovery

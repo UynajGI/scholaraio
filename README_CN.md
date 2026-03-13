@@ -158,6 +158,7 @@ scholaraio import-zotero      从 Zotero 导入
 scholaraio attach-pdf         为已有论文补充 PDF
 scholaraio setup              环境配置向导
 scholaraio metrics            查看 LLM 用量统计
+scholaraio migrate-dirs       迁移论文目录结构（扁平 → 按目录）
 ```
 
 </details>
@@ -166,17 +167,22 @@ scholaraio metrics            查看 LLM 用量统计
 
 ```
 scholaraio/          # Python 包
-  cli.py             # CLI 入口（29 个子命令）
+  cli.py             # CLI 入口（30 个子命令）
   mcp_server.py      # MCP 服务器（31 个工具）
+  config.py          # 配置加载（YAML + 路径解析）
+  papers.py          # 论文路径 helper（UUID → 目录映射）
   ingest/            # PDF 解析 + 元数据流水线
   index.py           # FTS5 全文检索
-  vectors.py         # Qwen3 语义嵌入 + FAISS
+  vectors.py         # Qwen3 语义嵌入 + FAISS + GPU 自适应批处理
   topics.py          # BERTopic 主题建模
   loader.py          # L1-L4 分层加载
-  explore.py         # OpenAlex 期刊探索
+  explore.py         # 多维文献探索（OpenAlex + 检索 + 主题建模）
   workspace.py       # 工作区管理
   export.py          # BibTeX 导出
   audit.py           # 数据质量审计
+  sources/           # 数据源适配（local / Endnote / Zotero）
+  metrics.py         # LLM token 用量 + API 计时
+  setup.py           # 环境检测 + 安装向导
 
 .claude/skills/      # 22 个 agent skills（AgentSkills.io 格式）
 .agents/skills/      # ↑ 符号链接，方便跨 agent 发现
