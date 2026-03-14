@@ -34,7 +34,6 @@ nav:
       - Search & Browse: guide/search.md
       - Ingestion: guide/ingestion.md
       - Writing: guide/writing.md
-  - API Reference: api/
   - Contributing: contributing.md
   - Changelog: changelog.md
 
