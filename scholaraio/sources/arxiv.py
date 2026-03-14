@@ -28,7 +28,7 @@ def search_arxiv(query: str, top_k: int = 10) -> list[dict]:
     """
     import requests
 
-    params = {"search_query": f"all:{query}", "max_results": top_k, "sortBy": "relevance"}
+    params: dict[str, str | int] = {"search_query": f"all:{query}", "max_results": top_k, "sortBy": "relevance"}
     try:
         resp = requests.get(_ARXIV_API_URL, params=params, headers={"User-Agent": _USER_AGENT}, timeout=10)
         resp.raise_for_status()
