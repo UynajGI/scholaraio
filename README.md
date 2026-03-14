@@ -46,7 +46,7 @@ claude    # Launch Claude Code in the project directory — that's it
 
 |  | Feature | Details |
 |--|---------|---------|
-| **PDF Parsing** | Deep structure extraction | [MinerU](https://github.com/opendatalab/MinerU) → Markdown with figures, tables, LaTeX equations preserved. Papers, theses, technical reports, and other document types all supported |
+| **PDF Parsing** | Deep structure extraction | [MinerU](https://github.com/opendatalab/MinerU) → Markdown with figures, tables, LaTeX equations preserved. Papers, theses, technical reports all supported; long PDFs (>100 pp) auto-split and merged |
 | **Hybrid Search** | Keyword + semantic fusion | FTS5 + Qwen3 embeddings + FAISS → RRF ranking |
 | **Topic Discovery** | Auto-clustering | BERTopic + 6 interactive HTML visualizations — works on both your library and explore datasets |
 | **Literature Exploration** | Multi-dimensional discovery | OpenAlex with 9 filter dimensions (journal, concept, author, institution, keyword, source type, year, citations, work type) → embed → cluster → search |
@@ -83,6 +83,14 @@ ScholarAIO is designed to be **agent-agnostic**. It currently ships with configu
 
 The **MCP server** (`scholaraio-mcp`, 31 tools) works with any MCP-compatible client. Skills follow the open [AgentSkills.io](https://agentskills.io) standard — `.agents/skills/` is a symlink to `.claude/skills/` for cross-agent discovery.
 
+**Use without cloning** — install as a Claude Code plugin into any project:
+
+```bash
+/plugin marketplace add ZimoLiao/scholaraio
+/plugin install scholaraio@scholaraio-marketplace
+# Skills available as /scholaraio:search, /scholaraio:show, etc.
+```
+
 **Migrating from existing tools?** Import directly from Endnote (XML/RIS) and Zotero (Web API or local SQLite) — your PDFs, metadata, and references come along. More import sources are on the roadmap.
 
 ## How It Works
@@ -109,7 +117,7 @@ Main config: `config.yaml` (tracked). Secrets: `config.local.yaml` (gitignored).
 
 | Key | Purpose | Get it |
 |-----|---------|--------|
-| `DEEPSEEK_API_KEY` | LLM — metadata extraction, enrichment, academic discussion | [DeepSeek](https://platform.deepseek.com/) (default) or any OpenAI-compatible API |
+| `DEEPSEEK_API_KEY` | LLM — metadata extraction, enrichment, academic discussion | [DeepSeek](https://platform.deepseek.com/) (default), or switch backend to Claude / Gemini / Ollama / any OpenAI-compatible API |
 | `MINERU_API_KEY` | PDF → structured Markdown | Free at [mineru.net](https://mineru.net/apiManage/token) or [self-host](https://github.com/opendatalab/MinerU) |
 
 > **Both are optional.** Without LLM: regex-only extraction. Without MinerU: place `.md` files in `data/inbox/` directly.

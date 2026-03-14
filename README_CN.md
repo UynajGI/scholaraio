@@ -46,7 +46,7 @@ claude    # 在项目目录启动 Claude Code，开始对话
 
 |  | 功能 | 说明 |
 |--|------|------|
-| **PDF 解析** | 深度结构提取 | [MinerU](https://github.com/opendatalab/MinerU) → Markdown，图表、公式完整保留。支持期刊论文、学位论文、技术报告等多种文档类型 |
+| **PDF 解析** | 深度结构提取 | [MinerU](https://github.com/opendatalab/MinerU) → Markdown，图表、公式完整保留。支持期刊论文、学位论文、技术报告；超长 PDF（>100 页）自动切分合并 |
 | **融合检索** | 关键词 + 语义 | FTS5 + Qwen3 嵌入 + FAISS → RRF 排序融合 |
 | **主题发现** | 自动聚类 | BERTopic + 6 种交互式 HTML 可视化——同时支持主库和 explore 数据集 |
 | **文献探索** | 多维度发现 | OpenAlex 9 维过滤（期刊、概念、作者、机构、关键词、来源类型、年份、引用量、文献类型）→ 向量化 → 聚类 → 检索 |
@@ -83,6 +83,14 @@ ScholarAIO 的设计目标是 **agent 无关**。目前已为多种 agent 和 ID
 
 **MCP 服务器**（`scholaraio-mcp`，31 个工具）适用于任何 MCP 兼容客户端。Skills 遵循开放的 [AgentSkills.io](https://agentskills.io) 标准——`.agents/skills/` 是 `.claude/skills/` 的符号链接，方便跨 agent 发现。
 
+**免 clone 直接用** —— 作为 Claude Code 插件安装到任意项目：
+
+```bash
+/plugin marketplace add ZimoLiao/scholaraio
+/plugin install scholaraio@scholaraio-marketplace
+# 以 /scholaraio:search、/scholaraio:show 等命名空间使用
+```
+
 **从现有工具迁移？** 支持从 Endnote（XML/RIS）和 Zotero（Web API 或本地 SQLite）直接导入——PDF、元数据、引用关系一并迁入。更多导入源持续开发中。
 
 ## 工作流程
@@ -109,7 +117,7 @@ PDF → MinerU → 结构化 Markdown（图表 + LaTeX 公式保留）
 
 | Key | 用途 | 获取方式 |
 |-----|------|---------|
-| `DEEPSEEK_API_KEY` | LLM——元数据提取、内容富化、学术讨论 | [DeepSeek](https://platform.deepseek.com/)（默认）或任意 OpenAI 兼容 API |
+| `DEEPSEEK_API_KEY` | LLM——元数据提取、内容富化、学术讨论 | [DeepSeek](https://platform.deepseek.com/)（默认），也可切换为 Claude / Gemini / Ollama / 任意 OpenAI 兼容 API |
 | `MINERU_API_KEY` | PDF → 结构化 Markdown | [mineru.net](https://mineru.net/apiManage/token) 免费申请，也可[本地部署](https://github.com/opendatalab/MinerU) |
 
 > **均为可选。** 没有 LLM key：降级为纯正则提取。没有 MinerU key：直接将 `.md` 放入 `data/inbox/`。
