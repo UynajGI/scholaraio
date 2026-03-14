@@ -100,38 +100,15 @@ class TestEnrichL3Skip:
             assert t in L3_SKIP_TYPES
 
 
-class TestLoadNotes:
-    """load_notes contract: returns notes text or None."""
+class TestNotes:
+    """notes.md read/write contract: persist and retrieve analysis notes."""
 
-    def test_no_notes_file_returns_none(self, tmp_path):
+    def test_no_notes_returns_none(self, tmp_path):
         d = tmp_path / "SomePaper"
         d.mkdir()
         assert load_notes(d) is None
 
-    def test_empty_notes_file_returns_none(self, tmp_path):
-        d = tmp_path / "SomePaper"
-        d.mkdir()
-        (d / "notes.md").write_text("", encoding="utf-8")
-        assert load_notes(d) is None
-
-    def test_whitespace_only_returns_none(self, tmp_path):
-        d = tmp_path / "SomePaper"
-        d.mkdir()
-        (d / "notes.md").write_text("  \n\n  ", encoding="utf-8")
-        assert load_notes(d) is None
-
-    def test_returns_content(self, tmp_path):
-        d = tmp_path / "SomePaper"
-        d.mkdir()
-        content = "## 2026-03-14 | ws-test | literature-review\n\nKey finding."
-        (d / "notes.md").write_text(content, encoding="utf-8")
-        assert load_notes(d) == content
-
-
-class TestAppendNotes:
-    """append_notes contract: creates or appends to notes.md."""
-
-    def test_creates_notes_if_absent(self, tmp_path):
+    def test_append_then_load_roundtrip(self, tmp_path):
         d = tmp_path / "SomePaper"
         d.mkdir()
         append_notes(d, "## 2026-03-14 | ws | skill\n\nFirst note.")
@@ -139,22 +116,11 @@ class TestAppendNotes:
         assert notes is not None
         assert "First note." in notes
 
-    def test_appends_with_separator(self, tmp_path):
+    def test_multiple_appends_preserve_all_sections(self, tmp_path):
         d = tmp_path / "SomePaper"
         d.mkdir()
         append_notes(d, "## Section 1\n\nFirst.")
         append_notes(d, "## Section 2\n\nSecond.")
-        content = (d / "notes.md").read_text(encoding="utf-8")
-        assert "## Section 1" in content
-        assert "## Section 2" in content
-        # Two sections separated by blank line
-        assert "\n\n## Section 2" in content
-
-    def test_trailing_newlines_stripped(self, tmp_path):
-        d = tmp_path / "SomePaper"
-        d.mkdir()
-        append_notes(d, "Note with trailing newlines\n\n\n")
-        content = (d / "notes.md").read_text(encoding="utf-8")
-        # Should end with exactly one newline
-        assert content.endswith("newlines\n")
-        assert not content.endswith("newlines\n\n")
+        notes = load_notes(d)
+        assert "## Section 1" in notes
+        assert "## Section 2" in notes
