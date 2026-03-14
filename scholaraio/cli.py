@@ -1193,9 +1193,23 @@ def cmd_ws(args: argparse.Namespace, cfg) -> None:
         if args.add_all:
             import sqlite3
 
-            with sqlite3.connect(cfg.index_db) as conn:
-                conn.row_factory = sqlite3.Row
-                rows = conn.execute("SELECT id FROM papers_registry").fetchall()
+            index_db_path = Path(cfg.index_db)
+            if not index_db_path.exists():
+                ui("索引数据库不存在，可能尚未初始化。")
+                ui("请先运行: scholaraio index")
+                return
+
+            try:
+                with sqlite3.connect(cfg.index_db) as conn:
+                    conn.row_factory = sqlite3.Row
+                    rows = conn.execute("SELECT id FROM papers_registry").fetchall()
+            except sqlite3.OperationalError as e:
+                # Common cases: table does not exist, schema not initialized, etc.
+                _log.debug("索引数据库查询失败: %s", e)
+                ui("索引数据库结构不完整或尚未初始化。")
+                ui("请先运行: scholaraio index")
+                return
+
             paper_refs = [r["id"] for r in rows]
             if not paper_refs:
                 ui("主库中没有论文")
