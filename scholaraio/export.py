@@ -448,21 +448,21 @@ def _md_to_docx(doc, content: str) -> None:
         # Unordered list
         if re.match(r"^[\s]*[-*+] ", line):
             text = re.sub(r"^[\s]*[-*+] ", "", line)
-            p = doc.add_paragraph(_strip_inline_md(text), style="List Bullet")
+            _add_paragraph_with_inline(doc, text, style="List Bullet")
             i += 1
             continue
 
         # Ordered list
         if re.match(r"^[\s]*\d+\. ", line):
             text = re.sub(r"^[\s]*\d+\. ", "", line)
-            doc.add_paragraph(_strip_inline_md(text), style="List Number")
+            _add_paragraph_with_inline(doc, text, style="List Number")
             i += 1
             continue
 
         # Blockquote
         if line.startswith("> "):
             text = line[2:].strip()
-            p = doc.add_paragraph(_strip_inline_md(text))
+            p = _add_paragraph_with_inline(doc, text)
             p.paragraph_format.left_indent = Pt(24)
             i += 1
             continue
@@ -513,15 +513,14 @@ def _strip_inline_md(text: str) -> str:
     return text
 
 
-def _add_paragraph_with_inline(doc, text: str) -> None:
-    """Add a paragraph with inline bold/italic formatting preserved."""
+def _add_paragraph_with_inline(doc, text: str, style: str | None = None):
+    """Add a paragraph with inline bold/italic formatting preserved. Returns the paragraph."""
     try:
         from docx.shared import Pt
     except ImportError:
-        doc.add_paragraph(text)
-        return
+        return doc.add_paragraph(text, style=style)
 
-    p = doc.add_paragraph()
+    p = doc.add_paragraph(style=style)
     # Split on bold (**...**) and italic (*...*) patterns
     pattern = re.compile(r"(\*{2,3}.+?\*{2,3}|\*[^*]+\*|__[^_]+__|_[^_]+_|`[^`]+`|\[.+?\]\(.+?\))")
     parts = pattern.split(text)
@@ -550,3 +549,5 @@ def _add_paragraph_with_inline(doc, text: str) -> None:
                 run.text = m.group(1)
         else:
             run.text = part
+
+    return p

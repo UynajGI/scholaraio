@@ -310,7 +310,9 @@ def get_formatter(name: str, cfg: Config) -> FormatterFn:
         )
 
     spec = importlib.util.spec_from_file_location(f"_csl_{name}", style_file)
-    mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load style '{name}': import machinery returned no spec/loader for {style_file}")
+    mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # type: ignore[union-attr]
     if not hasattr(mod, "format_ref"):
         raise AttributeError(f"Style file {style_file} must define a `format_ref(meta, idx)` function.")

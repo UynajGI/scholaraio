@@ -110,9 +110,9 @@ class InboxCtx:
 def step_office_convert(ctx: InboxCtx) -> StepResult:
     """Office 文档（DOCX / XLSX / PPTX）→ Markdown 转换（MarkItDown）。
 
-    仅对 ctx.pdf_path 扩展字段 ``office_path`` 存在时执行（通过 InboxCtx 的
-    ``opts["office_path"]`` 传入，由 _process_inbox 在扫描 Office 文件时注入）。
-    已有同名 ``.md`` 时跳过。
+    仅当 ``ctx.opts["office_path"]`` 存在时执行（由 ``_process_inbox`` 在扫描
+    Office 文件时注入；非 Office 文件入口时 ``office_path`` 不存在，步骤直接跳过）。
+    已有同名 ``.md`` 时跳过转换并直接使用已有文件。
 
     Args:
         ctx: Inbox 上下文，转换后 ``ctx.md_path`` 指向生成的 ``.md``。
@@ -501,8 +501,11 @@ def step_ingest(ctx: InboxCtx) -> StepResult:
     # Clean up original Office source file (DOCX/XLSX/PPTX) if present
     office_src: Path | None = ctx.opts.get("office_path")
     if office_src and office_src.exists():
-        office_src.unlink()
-        _log.debug("deleted office source: %s", office_src.name)
+        try:
+            office_src.unlink()
+            _log.debug("deleted office source: %s", office_src.name)
+        except OSError as exc:
+            _log.warning("could not delete office source %s: %s", office_src.name, exc)
     ctx.ingested_json = new_json
     ctx.status = "ingested"
     return StepResult.OK
@@ -706,7 +709,8 @@ STEPS: dict[str, StepDef] = {
 # office_convert runs before mineru; for PDF entries it is a no-op (office_path not set).
 _DOC_INBOX_STEPS = ["office_convert", "mineru", "extract_doc", "ingest"]
 
-# Office formats recognised in inbox-doc (and regular inbox)
+# Office formats scanned in any inbox when office_convert is in the step list.
+# Regular inbox presets don't include office_convert, so Office files there are ignored.
 _OFFICE_EXTENSIONS = (".docx", ".xlsx", ".pptx")
 
 PRESETS: dict[str, list[str]] = {
@@ -867,6 +871,10 @@ def _process_inbox(
         if paths["pdf"]:
             file_label = paths["pdf"].name
             file_type = "PDF"
+        elif paths["md"]:
+            # Prefer .md over Office when both exist (Office file will still be cleaned up)
+            file_label = paths["md"].name
+            file_type = "MD"
         elif office_path:
             file_label = office_path.name
             file_type = office_path.suffix.lstrip(".").upper()
@@ -882,9 +890,9 @@ def _process_inbox(
         elif batch_skip_mineru and long_pdf_stems and stem not in long_pdf_stems:
             file_steps = [s for s in per_file_steps if s != "mineru"]
 
-        # Inject office_path into per-file opts so step_office_convert can find it
+        # Always inject office_path when present so step_ingest can clean up the source file
         file_opts = dict(opts)
-        if office_path and not paths["pdf"] and not paths["md"]:
+        if office_path and not paths["pdf"]:
             file_opts["office_path"] = office_path
 
         ctx = InboxCtx(
