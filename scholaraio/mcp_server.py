@@ -1490,9 +1490,10 @@ def federated_search(
                 results = unified_search(query, cfg.index_db, top_k=top_k, cfg=cfg)
                 output["main"] = results
             except FileNotFoundError:
-                output["main"] = [{"error": "index_not_found"}]
+                output["main"] = [{"error": "index_not_found", "message": "Index not built. Run: scholaraio index"}]
             except Exception as e:
-                output["main"] = [{"error": str(e)}]
+                _log.exception("federated_search main error")
+                output["main"] = [{"error": "internal", "message": str(e)}]
 
         elif src.startswith("explore:"):
             explore_name = src[len("explore:") :]
@@ -1507,13 +1508,14 @@ def federated_search(
 
                 db = _db_path(name, cfg)
                 if not db.exists():
-                    output[f"explore:{name}"] = [{"error": "db_not_found"}]
+                    output[f"explore:{name}"] = [{"error": "db_not_found", "message": f"Explore DB not found: {name}"}]
                     continue
                 try:
                     results = explore_unified_search(name, query, top_k=top_k, cfg=cfg)
                     output[f"explore:{name}"] = results
                 except Exception as e:
-                    output[f"explore:{name}"] = [{"error": str(e)}]
+                    _log.exception("federated_search explore:%s error", name)
+                    output[f"explore:{name}"] = [{"error": "internal", "message": str(e)}]
 
         elif src == "arxiv":
             from scholaraio.sources.arxiv import search_arxiv
@@ -1539,6 +1541,14 @@ def federated_search(
                 for r in arxiv_results:
                     r["in_main_library"] = bool(r.get("doi") and r["doi"].lower() in in_lib_dois)
             output["arxiv"] = arxiv_results
+
+        else:
+            output[src] = [
+                {
+                    "error": "unknown_scope",
+                    "message": f"Unknown scope '{src}'. Supported: main / explore:NAME / explore:* / arxiv",
+                }
+            ]
 
     return json.dumps(output, ensure_ascii=False)
 

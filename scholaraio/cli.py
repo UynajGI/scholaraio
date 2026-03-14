@@ -60,6 +60,37 @@ def _resolve_top(args: argparse.Namespace, default: int) -> int:
     return args.top if args.top is not None else default
 
 
+def _record_search_metrics(
+    store,
+    name: str,
+    query: str,
+    results: list,
+    elapsed: float,
+    args: argparse.Namespace,
+) -> None:
+    """Record a search event to the metrics store, silently ignoring failures."""
+    if not store:
+        return
+    try:
+        store.record(
+            category="search",
+            name=name,
+            duration_s=elapsed,
+            detail={
+                "query": query,
+                "result_count": len(results),
+                "top_dois": [r["doi"] for r in results[:5] if r.get("doi")],
+                "filters": {
+                    "year": getattr(args, "year", None),
+                    "journal": getattr(args, "journal", None),
+                    "paper_type": getattr(args, "paper_type", None),
+                },
+            },
+        )
+    except Exception as _e:
+        _log.debug("metrics record failed: %s", _e)
+
+
 def _add_filter_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--year", type=str, default=None, help="年份过滤：2023 / 2020-2024 / 2020-")
     parser.add_argument("--journal", type=str, default=None, help="期刊名过滤（模糊匹配）")
@@ -183,25 +214,7 @@ def cmd_search(args: argparse.Namespace, cfg) -> None:
 
     elapsed = time.monotonic() - t0
     store = get_store()
-    if store:
-        try:
-            store.record(
-                category="search",
-                name="search",
-                duration_s=elapsed,
-                detail={
-                    "query": query,
-                    "result_count": len(results),
-                    "top_dois": [r["doi"] for r in results[:5] if r.get("doi")],
-                    "filters": {
-                        "year": args.year,
-                        "journal": args.journal,
-                        "paper_type": getattr(args, "paper_type", None),
-                    },
-                },
-            )
-        except Exception as _e:
-            _log.debug("metrics record failed: %s", _e)
+    _record_search_metrics(store, "search", query, results, elapsed, args)
 
     if not results:
         ui(f'No results for "{query}".')
@@ -319,25 +332,7 @@ def cmd_vsearch(args: argparse.Namespace, cfg) -> None:
 
     elapsed = time.monotonic() - t0
     store = get_store()
-    if store:
-        try:
-            store.record(
-                category="search",
-                name="vsearch",
-                duration_s=elapsed,
-                detail={
-                    "query": query,
-                    "result_count": len(results),
-                    "top_dois": [r["doi"] for r in results[:5] if r.get("doi")],
-                    "filters": {
-                        "year": args.year,
-                        "journal": args.journal,
-                        "paper_type": getattr(args, "paper_type", None),
-                    },
-                },
-            )
-        except Exception as _e:
-            _log.debug("metrics record failed: %s", _e)
+    _record_search_metrics(store, "vsearch", query, results, elapsed, args)
 
     if not results:
         ui(f'No results for "{query}".')
@@ -368,25 +363,7 @@ def cmd_usearch(args: argparse.Namespace, cfg) -> None:
     )
     elapsed = time.monotonic() - t0
     store = get_store()
-    if store:
-        try:
-            store.record(
-                category="search",
-                name="usearch",
-                duration_s=elapsed,
-                detail={
-                    "query": query,
-                    "result_count": len(results),
-                    "top_dois": [r["doi"] for r in results[:5] if r.get("doi")],
-                    "filters": {
-                        "year": args.year,
-                        "journal": args.journal,
-                        "paper_type": getattr(args, "paper_type", None),
-                    },
-                },
-            )
-        except Exception as _e:
-            _log.debug("metrics record failed: %s", _e)
+    _record_search_metrics(store, "usearch", query, results, elapsed, args)
 
     if not results:
         ui(f'No results for "{query}".')
@@ -1648,17 +1625,31 @@ def cmd_insights(args: argparse.Namespace, cfg) -> None:
     ui()
 
     # 2. 最常阅读论文 Top 10 — count by resolved title to dedup UUID vs dir_name
+    # First pass: count by name and collect one detail payload per name (cheaply).
     papers_dir = cfg.papers_dir
-    title_read_counts: Counter = Counter()
-    pid_to_title: dict[str, str] = {}
+    name_counts: Counter = Counter()
+    name_to_detail_title: dict[str, str] = {}  # title from recorded detail (fast)
 
     for ev in read_events:
         name = ev.get("name", "")
         if not name:
             continue
-        if name not in pid_to_title:
-            title = ""
-            # Try dir_name lookup first
+        name_counts[name] += 1
+        if name not in name_to_detail_title and ev.get("detail"):
+            try:
+                d = _json.loads(ev["detail"])
+                t = d.get("title", "")
+                if t:
+                    name_to_detail_title[name] = t
+            except Exception:
+                pass
+
+    # Second pass: resolve titles only for the top-N candidates that will be shown.
+    # Disk reads are capped to at most 10 lookups.
+    pid_to_title: dict[str, str] = {}
+    for name, _ in name_counts.most_common(10):
+        title = name_to_detail_title.get(name, "")
+        if not title:
             meta_path = papers_dir / name / "meta.json"
             if meta_path.exists():
                 try:
@@ -1666,14 +1657,12 @@ def cmd_insights(args: argparse.Namespace, cfg) -> None:
                     title = meta.get("title", "")
                 except Exception:
                     pass
-            if not title and ev.get("detail"):
-                try:
-                    d = _json.loads(ev["detail"])
-                    title = d.get("title", "")
-                except Exception:
-                    pass
-            pid_to_title[name] = title or name
-        title_read_counts[pid_to_title[name]] += 1
+        pid_to_title[name] = title or name
+
+    title_read_counts: Counter = Counter()
+    for name, cnt in name_counts.items():
+        title_key = pid_to_title.get(name, name)
+        title_read_counts[title_key] += cnt
 
     ui("【最常阅读论文 Top 10】")
     if title_read_counts:

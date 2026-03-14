@@ -63,7 +63,8 @@ class TestFederatedSearchMain:
 
             result = json.loads(federated_search("attention", scope="main"))
 
-        assert result["main"] == [{"error": "index_not_found"}]
+        assert result["main"][0]["error"] == "index_not_found"
+        assert "message" in result["main"][0]
 
     def test_main_generic_error(self, tmp_path):
         cfg = _make_cfg(tmp_path)
@@ -75,7 +76,8 @@ class TestFederatedSearchMain:
 
             result = json.loads(federated_search("attention", scope="main"))
 
-        assert result["main"][0]["error"] == "boom"
+        assert result["main"][0]["error"] == "internal"
+        assert "boom" in result["main"][0]["message"]
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +115,8 @@ class TestFederatedSearchExplore:
 
             result = json.loads(federated_search("bert", scope="explore:ghost"))
 
-        assert result["explore:ghost"] == [{"error": "db_not_found"}]
+        assert result["explore:ghost"][0]["error"] == "db_not_found"
+        assert "message" in result["explore:ghost"][0]
 
 
 # ---------------------------------------------------------------------------
@@ -204,3 +207,14 @@ class TestFederatedSearchMultiScope:
 
         parsed = json.loads(raw)
         assert isinstance(parsed, dict)
+
+    def test_unknown_scope_returns_error_entry(self, tmp_path):
+        cfg = _make_cfg(tmp_path)
+        with patch("scholaraio.mcp_server._get_cfg", return_value=cfg):
+            from scholaraio.mcp_server import federated_search
+
+            result = json.loads(federated_search("attention", scope="bogus"))
+
+        assert "bogus" in result
+        assert result["bogus"][0]["error"] == "unknown_scope"
+        assert "message" in result["bogus"][0]

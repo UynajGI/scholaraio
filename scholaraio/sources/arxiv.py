@@ -8,7 +8,17 @@ import xml.etree.ElementTree as ET
 _log = logging.getLogger(__name__)
 
 _ARXIV_API_URL = "https://export.arxiv.org/api/query"
-_USER_AGENT = "scholaraio/1.0 (https://github.com/ZimoLiao/scholaraio)"
+
+
+def _user_agent() -> str:
+    try:
+        from scholaraio import __version__
+    except Exception:
+        __version__ = "unknown"
+    return f"scholaraio/{__version__} (https://github.com/ZimoLiao/scholaraio)"
+
+
+_USER_AGENT = "scholaraio/1.0 (https://github.com/ZimoLiao/scholaraio)"  # fallback; see _user_agent()
 _NS = {
     "atom": "http://www.w3.org/2005/Atom",
     "arxiv": "http://arxiv.org/schemas/atom",
@@ -30,7 +40,7 @@ def search_arxiv(query: str, top_k: int = 10) -> list[dict]:
 
     params: dict[str, str | int] = {"search_query": f"all:{query}", "max_results": top_k, "sortBy": "relevance"}
     try:
-        resp = requests.get(_ARXIV_API_URL, params=params, headers={"User-Agent": _USER_AGENT}, timeout=10)
+        resp = requests.get(_ARXIV_API_URL, params=params, headers={"User-Agent": _user_agent()}, timeout=10)
         resp.raise_for_status()
     except Exception as e:
         _log.warning("arXiv API 不可用: %s", e)
