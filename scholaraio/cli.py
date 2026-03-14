@@ -2193,7 +2193,9 @@ def main() -> None:
 
     p_ed = p_export_sub.add_parser("docx", help="将 Markdown 文本导出为 Word DOCX 文件")
     p_ed.add_argument("--input", "-i", type=str, default=None, help="输入 Markdown 文件路径（省略则从 stdin 读取）")
-    p_ed.add_argument("--output", "-o", type=str, default=None, help="输出 .docx 文件路径（默认 workspace/output.docx）")
+    p_ed.add_argument(
+        "--output", "-o", type=str, default=None, help="输出 .docx 文件路径（默认 workspace/output.docx）"
+    )
     p_ed.add_argument("--title", type=str, default=None, help="文档标题（可选，插入为一级标题）")
 
     # --- ws (workspace) ---
