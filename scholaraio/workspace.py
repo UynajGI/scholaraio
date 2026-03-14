@@ -90,7 +90,7 @@ def add(
     Args:
         ws_dir: 工作区目录路径。
         paper_refs: 论文引用列表（UUID / 目录名 / DOI）。
-            当 *resolved* 非空时本参数被忽略。
+            当 *resolved* 不为 ``None`` 时本参数被忽略。
         db_path: index.db 路径，用于 lookup_paper。
         resolved: 预解析的论文列表，每个元素须含 ``"id"`` 和
             ``"dir_name"`` 键。提供时跳过 lookup_paper 查询。
