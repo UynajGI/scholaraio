@@ -79,7 +79,8 @@ MinerU 解析的 Markdown 保留了高质量公式（LaTeX）和图片附件（`
 | `loader.py` | L1-L4 分层加载 + enrich_toc + enrich_l3 |
 | `explore.py` | 多维文献探索（OpenAlex 多维过滤 + 关键词 + 语义 + 融合检索 + 主题，数据隔离在 `data/explore/`） |
 | `workspace.py` | 工作区论文子集管理（复用搜索/导出） |
-| `export.py` | BibTeX 导出 |
+| `export.py` | BibTeX / RIS / Markdown 文献列表 / DOCX 导出 |
+| `citation_styles.py` | 引用格式管理（内置 APA/Vancouver/Chicago/MLA + 动态加载自定义格式，存于 `data/citation_styles/`） |
 | `audit.py` | 数据质量审计 + 修复 |
 | `sources/` | 数据源适配（local / endnote / zotero） |
 | `cli.py` | 全量 CLI 入口 |
