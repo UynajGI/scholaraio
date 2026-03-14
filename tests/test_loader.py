@@ -11,7 +11,7 @@ import json
 from typing import cast
 
 from scholaraio.config import Config
-from scholaraio.loader import L3_SKIP_TYPES, enrich_l3, load_l1, load_l2
+from scholaraio.loader import L3_SKIP_TYPES, append_notes, enrich_l3, load_l1, load_l2, load_notes
 
 # enrich_l3 requires a Config argument but the skip-by-type branch
 # returns before it is used.  We use a typed sentinel so mypy is happy.
@@ -98,3 +98,29 @@ class TestEnrichL3Skip:
         """All documented skip types are present in the set."""
         for t in ("thesis", "book", "monograph", "document", "dissertation"):
             assert t in L3_SKIP_TYPES
+
+
+class TestNotes:
+    """notes.md read/write contract: persist and retrieve analysis notes."""
+
+    def test_no_notes_returns_none(self, tmp_path):
+        d = tmp_path / "SomePaper"
+        d.mkdir()
+        assert load_notes(d) is None
+
+    def test_append_then_load_roundtrip(self, tmp_path):
+        d = tmp_path / "SomePaper"
+        d.mkdir()
+        append_notes(d, "## 2026-03-14 | ws | skill\n\nFirst note.")
+        notes = load_notes(d)
+        assert notes is not None
+        assert "First note." in notes
+
+    def test_multiple_appends_preserve_all_sections(self, tmp_path):
+        d = tmp_path / "SomePaper"
+        d.mkdir()
+        append_notes(d, "## Section 1\n\nFirst.")
+        append_notes(d, "## Section 2\n\nSecond.")
+        notes = load_notes(d)
+        assert "## Section 1" in notes
+        assert "## Section 2" in notes
