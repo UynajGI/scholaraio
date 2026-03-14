@@ -16,9 +16,9 @@ class TestBuildTopicsNrTopicsMapping:
     @pytest.mark.parametrize(
         "nr_topics, expected",
         [
-            (0, "auto"),   # default: automatic topic merging/reduction
-            (-1, None),    # explicit: no reduction, keep HDBSCAN clusters
-            (5, 5),        # explicit target count: passed through unchanged
+            (0, "auto"),  # default: automatic topic merging/reduction
+            (-1, None),  # explicit: no reduction, keep HDBSCAN clusters
+            (5, 5),  # explicit target count: passed through unchanged
             (20, 20),
         ],
     )
