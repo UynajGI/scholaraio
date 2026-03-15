@@ -64,7 +64,7 @@ def _record_search_metrics(
     store,
     name: str,
     query: str,
-    results: list,
+    results: list[dict],
     elapsed: float,
     args: argparse.Namespace,
 ) -> None:
@@ -1567,7 +1567,7 @@ def cmd_insights(args: argparse.Namespace, cfg) -> None:
 
     ui(f"=== 科研行为分析（过去 {days} 天）===\n")
 
-    # 1. 搜索热词 Top 10
+    # 1. Top 10 search keywords
     _STOPWORDS = {
         "a",
         "an",
@@ -1628,7 +1628,7 @@ def cmd_insights(args: argparse.Namespace, cfg) -> None:
         ui("  暂无搜索记录")
     ui()
 
-    # 2. 最常阅读论文 Top 10 — count by resolved title to dedup UUID vs dir_name
+    # 2. Top 10 most-read papers — aggregate by resolved title to dedup UUID vs dir_name variants
     # First pass: count by name and collect one detail payload per name (cheaply).
     papers_dir = cfg.papers_dir
     name_counts: Counter = Counter()
@@ -1679,7 +1679,7 @@ def cmd_insights(args: argparse.Namespace, cfg) -> None:
         ui("  暂无阅读记录")
     ui()
 
-    # 3. 阅读量趋势（按周 ASCII 折线图）
+    # 3. Weekly read-count trend (ASCII bar chart)
     ui("【阅读量趋势（按周）】")
     if read_events:
         week_counts: Counter = Counter()
@@ -1705,7 +1705,7 @@ def cmd_insights(args: argparse.Namespace, cfg) -> None:
         ui("  暂无阅读记录")
     ui()
 
-    # 4. 推荐"相邻论文"（最近7天阅读的论文的语义邻居，但未阅读过）
+    # 4. Recommend semantically adjacent papers not yet read (based on last 7 days of reads)
     ui("【推荐：你可能还没读过的邻近论文】")
     recent_since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     recent_reads = store.query(category="read", since=recent_since, limit=500)
