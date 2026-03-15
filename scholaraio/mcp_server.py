@@ -1512,9 +1512,9 @@ def federated_search(
             else:
                 names = [explore_name]
             for name in names:
-                from scholaraio.explore import _db_path, explore_unified_search
+                from scholaraio.explore import explore_db_path, explore_unified_search
 
-                db = _db_path(name, cfg)
+                db = explore_db_path(name, cfg)
                 if not db.exists():
                     output[f"explore:{name}"] = [{"error": "db_not_found", "message": f"Explore DB not found: {name}"}]
                     continue

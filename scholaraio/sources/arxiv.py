@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-import xml.etree.ElementTree as ET
+
+import defusedxml.ElementTree as ET
 
 _log = logging.getLogger(__name__)
 

@@ -57,6 +57,19 @@ def _db_path(name: str, cfg: Config | None = None) -> Path:
     return _explore_dir(name, cfg) / "explore.db"
 
 
+def explore_db_path(name: str, cfg: Config | None = None) -> Path:
+    """Return the SQLite DB path for an explore library.
+
+    Args:
+        name: Explore library name.
+        cfg: Optional Config instance; resolved from environment if omitted.
+
+    Returns:
+        Path to ``explore.db`` inside the library directory.
+    """
+    return _db_path(name, cfg)
+
+
 def _meta_path(name: str, cfg: Config | None = None) -> Path:
     return _explore_dir(name, cfg) / "meta.json"
 

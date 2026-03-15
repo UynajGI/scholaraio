@@ -216,6 +216,25 @@ class MetricsStore:
             cols = [d[0] for d in cur.description]
             return [dict(zip(cols, row)) for row in cur.fetchall()]
 
+    def query_distinct_names(self, category: str) -> set[str]:
+        """Return all distinct event names ever recorded for a category.
+
+        Unlike :meth:`query`, this has no row-count cap — it reads a single
+        ``SELECT DISTINCT`` projection so it is safe even for very large tables.
+
+        Args:
+            category: Event category to filter on (e.g. ``"read"``).
+
+        Returns:
+            Set of distinct ``name`` values (empty strings excluded).
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT DISTINCT name FROM events WHERE category = ? AND name IS NOT NULL AND name != ''",
+                (category,),
+            )
+            return {row[0] for row in cur.fetchall()}
+
     def summary(self, session_id: str | None = None) -> dict:
         """汇总 LLM token 用量。
 

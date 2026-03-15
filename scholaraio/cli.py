@@ -1625,9 +1625,9 @@ def cmd_fsearch(args: argparse.Namespace, cfg) -> None:
 
             for name in names:
                 ui(f"── [explore: {name}] ──")
-                from scholaraio.explore import _db_path, explore_unified_search
+                from scholaraio.explore import explore_db_path, explore_unified_search
 
-                db = _db_path(name, cfg)
+                db = explore_db_path(name, cfg)
                 if not db.exists():
                     ui(f"  explore 库 {name} 不存在或未建索引（explore.db 缺失）")
                     ui()
@@ -1860,8 +1860,7 @@ def cmd_insights(args: argparse.Namespace, cfg) -> None:
     else:
         # Use all-time read history so papers read outside the current window
         # are not mistakenly recommended as "not yet read".
-        all_time_reads = store.query(category="read", limit=100000)
-        all_read_pids = {ev["name"] for ev in all_time_reads if ev.get("name")}
+        all_read_pids = store.query_distinct_names("read")
         try:
             from scholaraio.vectors import vsearch
 
