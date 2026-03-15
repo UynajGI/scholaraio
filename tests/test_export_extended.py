@@ -194,7 +194,7 @@ class TestCitationStyles:
 # ============================================================================
 
 
-docx = pytest.importorskip("docx", reason="python-docx not installed")
+pytest.importorskip("docx", reason="python-docx not installed")
 
 
 class TestExportDocx:

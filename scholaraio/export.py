@@ -528,7 +528,7 @@ def _add_paragraph_with_inline(doc, text: str, style: str | None = None):
         if not part:
             continue
         run = p.add_run()
-        if re.match(r"\*{3}.+\*{3}", part) or re.match(r"___.+___", part):
+        if re.match(r"\*{3}.+\*{3}", part):
             run.text = part[3:-3]
             run.bold = True
             run.italic = True
