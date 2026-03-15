@@ -1569,11 +1569,12 @@ def _query_dois_for_set(cfg, doi_set: list[str]) -> set[str]:
     if not doi_set or not Path(cfg.index_db).exists():
         return set()
     try:
-        placeholders = ",".join("?" * len(doi_set))
+        normalized = [d.lower() for d in doi_set]
+        placeholders = ",".join("?" * len(normalized))
         with sqlite3.connect(str(cfg.index_db)) as conn:
             rows = conn.execute(
-                f"SELECT doi FROM papers_registry WHERE LOWER(doi) IN ({placeholders})",
-                doi_set,
+                f"SELECT doi FROM papers_registry WHERE doi IN ({placeholders})",
+                normalized,
             ).fetchall()
         return {r[0].lower() for r in rows}
     except Exception:

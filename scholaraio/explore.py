@@ -92,8 +92,8 @@ def validate_explore_name(name: str) -> bool:
         return False
     if "/" in name or "\\" in name:
         return False
-    # Reject dotdot traversal components.
-    return ".." not in name.split(os.sep)
+    # Reject any name containing "..".
+    return ".." not in name
 
 
 def _meta_path(name: str, cfg: Config | None = None) -> Path:
