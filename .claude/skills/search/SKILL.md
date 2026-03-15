@@ -1,6 +1,6 @@
 ---
 name: search
-description: Search academic papers in the local ScholarAIO knowledge base. Supports unified search (keyword + semantic fusion), keyword-only (FTS5), semantic-only (FAISS), author search, top-cited ranking, and federated search across main library, explore databases, and arXiv. Use when the user wants to find papers, look up literature, search by author, explore research topics, or search across multiple sources.
+description: Search academic papers in the local ScholarAIO knowledge base. Supports unified search (keyword + semantic fusion), keyword-only (FTS5), semantic-only (FAISS), author search, and federated search across main library, explore databases, and arXiv. Use when the user wants to find papers, look up literature, search by author, explore research topics, or search across multiple sources. For citation rankings and citation count updates, see the /citations skill.
 version: 1.0.0
 author: ZimoLiao/scholaraio
 license: MIT
@@ -16,7 +16,7 @@ tags: ["academic", "search", "papers", "semantic", "fts5"]
    - 如果用户明确要求"语义搜索"、"向量搜索"或"vsearch"，使用 `vsearch`
    - 如果用户明确要求"关键词搜索"、"全文搜索"或"FTS"，使用 `search`
    - 如果用户明确按作者搜索（如"找某某的论文"、"某某发表的"），使用 `search-author`
-   - 如果用户要求按引用量排序（如"引用最高的"、"最经典的"、"top cited"），使用 `top-cited`
+   - 如果用户要求按引用量排序（如"引用最高的"、"最经典的"、"top cited"），转交 `/citations` skill
    - **默认使用 `usearch`（融合检索）**——同时执行 FTS5 关键词搜索和 FAISS 语义搜索，合并去重排序。两路都命中的论文排名靠前。向量索引不可用时自动降级为纯关键词。
    - 如果用户要求跨库搜索（如"也搜一下 arXiv"、"在 explore 库里也找找"、"全部来源"、"联邦搜索"），使用 `fsearch`
 
@@ -49,10 +49,7 @@ scholaraio vsearch "<查询词>" --top <N> [--year <Y>] [--journal <J>] [--type 
 scholaraio search-author "<作者名>" --top <N> [--year <Y>] [--journal <J>] [--type <T>]
 ```
 
-**引用量排序：**
-```bash
-scholaraio top-cited --top <N> [--year <Y>] [--journal <J>] [--type <T>]
-```
+> **引用量排序**：使用 `/citations` skill 中的 `scholaraio top-cited` 命令。
 
 **联邦搜索（跨库 + arXiv）：**
 ```bash

@@ -84,6 +84,7 @@ When the main agent delegates paper analysis to a subagent, information flows at
 | `workspace.py` | Workspace paper subset management (reuses search/export) |
 | `document.py` | Office document inspection (DOCX / PPTX / XLSX structure, layout, overflow detection) |
 | `export.py` | BibTeX export |
+| `citation_check.py` | Citation verification (extract author-year citations from text + cross-check against local KB) |
 | `audit.py` | Data quality audit + repair |
 | `sources/` | Data source adapters (local / endnote / zotero / arxiv) |
 | `cli.py` | Full CLI entry point |

@@ -31,11 +31,21 @@ cli.py — scholaraio 命令行入口
     scholaraio explore topics --name <NAME> [--build] [--rebuild] [--topic ID]
     scholaraio explore search --name <NAME> <query> [--top N]
     scholaraio explore viz --name <NAME>
+    scholaraio explore list
     scholaraio explore info [--name NAME]
     scholaraio export bibtex [<paper-id> ...] [--all] [--year Y] [--journal J] [-o FILE]
     scholaraio import-endnote <file.xml|file.ris> [--no-api] [--dry-run] [--no-convert]
     scholaraio import-zotero [--api-key KEY] [--library-id ID] [--local PATH] [--list-collections] ...
     scholaraio attach-pdf <paper-id> <path/to/paper.pdf>
+    scholaraio citation-check [<file>] [--ws <workspace-name>]
+    scholaraio ws init <name>
+    scholaraio ws add <name> <paper-refs...> [--search Q] [--topic ID] [--all]
+    scholaraio ws remove <name> <paper-refs...>
+    scholaraio ws list
+    scholaraio ws show <name>
+    scholaraio ws search <name> <query> [--top N] [--mode unified|keyword|semantic]
+    scholaraio ws rename <old-name> <new-name>
+    scholaraio ws export <name> [-o FILE]
 """
 
 from __future__ import annotations
@@ -1130,6 +1140,27 @@ def cmd_explore(args: argparse.Namespace, cfg) -> None:
             return
         _write_all_viz(model, model_dir / "viz")
 
+    elif action == "list":
+        import json as _json
+
+        explore_root = cfg._root / "data" / "explore"
+        if not explore_root.exists():
+            ui("No explore libraries. Use scholaraio explore fetch --issn <ISSN> to create one.")
+            return
+        for d in sorted(explore_root.iterdir()):
+            meta_file = d / "meta.json"
+            if meta_file.exists():
+                meta = _json.loads(meta_file.read_text("utf-8"))
+                query = meta.get("query", {})
+                if query:
+                    qinfo = ", ".join(f"{k}={v}" for k, v in query.items())
+                elif meta.get("issn"):
+                    qinfo = f"ISSN {meta['issn']}"
+                else:
+                    qinfo = "?"
+                ui(f"  {d.name}: {meta.get('count', '?')} papers ({qinfo}, fetched {meta.get('fetched_at', '?')})")
+        return
+
     elif action == "info":
         import json as _json
 
@@ -1527,18 +1558,49 @@ def cmd_ws(args: argparse.Namespace, cfg) -> None:
             ui("工作区为空")
             return
         query = " ".join(args.query)
-        from scholaraio.index import unified_search
+        mode = getattr(args, "mode", "unified")
+        top_k = _resolve_top(args, cfg.search.top_k)
 
-        results = unified_search(
-            query,
-            cfg.index_db,
-            top_k=_resolve_top(args, cfg.search.top_k),
-            cfg=cfg,
-            year=args.year,
-            journal=args.journal,
-            paper_type=args.paper_type,
-            paper_ids=pids,
-        )
+        if mode == "keyword":
+            from scholaraio.index import search as kw_search
+
+            results = kw_search(
+                query,
+                cfg.index_db,
+                top_k=top_k,
+                cfg=cfg,
+                year=args.year,
+                journal=args.journal,
+                paper_type=args.paper_type,
+                paper_ids=pids,
+            )
+        elif mode == "semantic":
+            from scholaraio.vectors import vsearch
+
+            results = vsearch(
+                query,
+                cfg.index_db,
+                top_k=top_k,
+                cfg=cfg,
+                year=args.year,
+                journal=args.journal,
+                paper_type=args.paper_type,
+                paper_ids=pids,
+            )
+        else:
+            from scholaraio.index import unified_search
+
+            results = unified_search(
+                query,
+                cfg.index_db,
+                top_k=top_k,
+                cfg=cfg,
+                year=args.year,
+                journal=args.journal,
+                paper_type=args.paper_type,
+                paper_ids=pids,
+            )
+
         if not results:
             ui(f'工作区 {args.name} 中未找到 "{query}" 的结果')
             return
@@ -1570,6 +1632,10 @@ def cmd_ws(args: argparse.Namespace, cfg) -> None:
             ui(f"已导出到 {out}（{bib.count('@')} 篇）")
         else:
             print(bib)
+
+    elif action == "rename":
+        ws_dir = workspace.rename(ws_root, args.old_name, args.new_name)
+        ui(f"工作区已重命名: {args.old_name} → {args.new_name}")
 
 
 # ============================================================================
@@ -2458,6 +2524,61 @@ def _print_header(l1: dict) -> None:
         ui(f"OpenAlex : {ids['openalex_url']}")
 
 
+def cmd_citation_check(args: argparse.Namespace, cfg) -> None:
+    from scholaraio.citation_check import check_citations, extract_citations
+
+    # Read input text
+    if args.file:
+        p = Path(args.file)
+        if not p.exists():
+            _log.error("文件不存在：%s", p)
+            sys.exit(1)
+        text = p.read_text(encoding="utf-8")
+    else:
+        text = sys.stdin.read()
+
+    if not text.strip():
+        ui("输入文本为空。")
+        return
+
+    citations = extract_citations(text)
+    if not citations:
+        ui("未在文本中发现引用。")
+        return
+
+    ui(f"提取到 {len(citations)} 条引用，正在验证…\n")
+
+    paper_ids = _resolve_ws_paper_ids(args, cfg)
+
+    results = check_citations(
+        citations,
+        cfg.index_db,
+        cfg.papers_dir,
+        paper_ids=paper_ids,
+    )
+
+    # Count by status
+    counts = {"VERIFIED": 0, "NOT_IN_LIBRARY": 0, "AMBIGUOUS": 0}
+    for r in results:
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+
+    for r in results:
+        status_icon = {"VERIFIED": "✓", "NOT_IN_LIBRARY": "✗", "AMBIGUOUS": "?"}.get(r["status"], " ")
+        ui(f"  [{status_icon}] {r['status']:16s}  {r['raw']}  ({r['author']}, {r['year']})")
+        if r["matches"]:
+            for m in r["matches"][:3]:
+                display_id = m.get("dir_name") or m.get("paper_id", "?")
+                ui(f"       → {display_id}")
+                ui(f"         {m.get('title', '?')}")
+
+    ui()
+    ui(
+        f"验证结果：{counts['VERIFIED']} VERIFIED / "
+        f"{counts['AMBIGUOUS']} AMBIGUOUS / "
+        f"{counts['NOT_IN_LIBRARY']} NOT_IN_LIBRARY"
+    )
+
+
 # ============================================================================
 #  Entry point
 # ============================================================================
@@ -2668,6 +2789,8 @@ def main() -> None:
     p_ev = p_explore_sub.add_parser("viz", help="生成全部可视化（HTML）")
     p_ev.add_argument("--name", required=True, help="探索库名称")
 
+    p_el = p_explore_sub.add_parser("list", help="列出所有探索库")
+
     p_ei = p_explore_sub.add_parser("info", help="查看探索库信息")
     p_ei.add_argument("--name", default=None, help="探索库名称（省略列出全部）")
 
@@ -2742,7 +2865,14 @@ def main() -> None:
     p_ws_search.add_argument("name", help="工作区名称")
     p_ws_search.add_argument("query", nargs="+", help="查询文本")
     p_ws_search.add_argument("--top", type=int, default=None, help="返回条数")
+    p_ws_search.add_argument(
+        "--mode", choices=["unified", "keyword", "semantic"], default="unified", help="搜索模式（默认 unified）"
+    )
     _add_filter_args(p_ws_search)
+
+    p_ws_rename = p_ws_sub.add_parser("rename", help="重命名工作区")
+    p_ws_rename.add_argument("old_name", help="当前工作区名称")
+    p_ws_rename.add_argument("new_name", help="新工作区名称")
 
     p_ws_export = p_ws_sub.add_parser("export", help="导出工作区论文 BibTeX")
     p_ws_export.add_argument("name", help="工作区名称")
@@ -2779,6 +2909,12 @@ def main() -> None:
     p_ap.add_argument("paper_id", help="论文 ID（目录名 / UUID / DOI）")
     p_ap.add_argument("pdf_path", help="PDF 文件路径")
     p_ap.add_argument("--dry-run", action="store_true", help="预览将要执行的操作，不实际运行")
+
+    # --- citation-check ---
+    p_cc = sub.add_parser("citation-check", help="验证文本中的引用是否在本地知识库中")
+    p_cc.set_defaults(func=cmd_citation_check)
+    p_cc.add_argument("file", nargs="?", default=None, help="待检查的文件路径（省略则从 stdin 读取）")
+    p_cc.add_argument("--ws", type=str, default=None, help="在指定工作区范围内验证")
 
     # --- setup ---
     p_setup = sub.add_parser("setup", help="环境检测与安装向导 / Setup wizard")

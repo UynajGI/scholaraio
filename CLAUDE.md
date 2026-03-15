@@ -82,6 +82,7 @@ MinerU 解析的 Markdown 保留了高质量公式（LaTeX）和图片附件（`
 | `document.py` | Office 文档检查（DOCX / PPTX / XLSX 结构/布局/溢出检测） |
 | `export.py` | BibTeX / RIS / Markdown 文献列表 / DOCX 导出 |
 | `citation_styles.py` | 引用格式管理（内置 APA/Vancouver/Chicago/MLA + 动态加载自定义格式，存于 `data/citation_styles/`） |
+| `citation_check.py` | 引用验证（从文本提取 author-year 引用 + 本地库交叉核验） |
 | `audit.py` | 数据质量审计 + 修复 |
 | `sources/` | 数据源适配（local / endnote / zotero / arxiv） |
 | `cli.py` | 全量 CLI 入口 |

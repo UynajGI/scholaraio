@@ -222,6 +222,31 @@ def read_paper_ids(ws_dir: Path) -> set[str]:
     return {e["id"] for e in _read(ws_dir)}
 
 
+def rename(ws_root: Path, old_name: str, new_name: str) -> Path:
+    """重命名工作区。
+
+    Args:
+        ws_root: workspace/ 根目录。
+        old_name: 当前工作区名称。
+        new_name: 新工作区名称。
+
+    Returns:
+        重命名后的工作区目录路径。
+
+    Raises:
+        FileNotFoundError: 源工作区不存在。
+        FileExistsError: 目标工作区已存在。
+    """
+    old_dir = ws_root / old_name
+    new_dir = ws_root / new_name
+    if not old_dir.exists():
+        raise FileNotFoundError(f"工作区不存在: {old_name}")
+    if new_dir.exists():
+        raise FileExistsError(f"目标工作区已存在: {new_name}")
+    old_dir.rename(new_dir)
+    return new_dir
+
+
 def read_dir_names(ws_dir: Path, db_path: Path) -> set[str]:
     """返回工作区中所有论文的当前目录名集合。
 
