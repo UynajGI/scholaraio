@@ -71,7 +71,11 @@ def detect_language(text: str) -> str:
     if total_alpha == 0:
         return "en"
 
+    # Japanese: kana alone (hiragana/katakana-heavy text with few kanji)
+    if kana_count / total_alpha > 0.1:
+        return "ja"
     if cjk_count / total_alpha > 0.15:
+        # Mixed CJK+kana → Japanese; pure CJK → Chinese
         if kana_count > cjk_count * 0.1:
             return "ja"
         return "zh"
@@ -92,6 +96,28 @@ _PROTECTED_RE = re.compile(
 
 _PLACEHOLDER_FMT = "\x00PROTECTED_{}\x00"
 _PLACEHOLDER_RE = re.compile(r"\x00PROTECTED_(\d+)\x00")
+
+
+def _hard_split(text: str, chunk_size: int) -> list[str]:
+    """Split an oversized text block into pieces ≤ chunk_size.
+
+    Tries sentence boundaries first (``". "``), falls back to hard cut.
+    """
+    if len(text) <= chunk_size:
+        return [text]
+    # Try splitting on sentence-ending ". "
+    parts: list[str] = []
+    while len(text) > chunk_size:
+        cut = text.rfind(". ", 0, chunk_size)
+        if cut == -1 or cut < chunk_size // 4:
+            cut = chunk_size  # hard cut
+        else:
+            cut += 2  # include ". "
+        parts.append(text[:cut])
+        text = text[cut:]
+    if text:
+        parts.append(text)
+    return parts
 
 
 def _split_into_chunks(text: str, chunk_size: int) -> list[str]:
@@ -126,6 +152,16 @@ def _split_into_chunks(text: str, chunk_size: int) -> list[str]:
 
     for para in paragraphs:
         para_len = len(para)
+        # Oversized paragraph: flush current, then hard-split the paragraph
+        if para_len > chunk_size:
+            if current:
+                chunks.append("\n\n".join(current))
+                current = []
+                current_len = 0
+            # Split on sentence boundaries or hard-cut
+            for frag in _hard_split(para, chunk_size):
+                chunks.append(frag)
+            continue
         if current_len + para_len > chunk_size and current:
             chunks.append("\n\n".join(current))
             current = []
@@ -147,7 +183,7 @@ def _split_into_chunks(text: str, chunk_size: int) -> list[str]:
 #  Translation via LLM
 # ============================================================================
 
-_TRANSLATE_PROMPT_BASE = """\
+_TRANSLATE_PROMPT_HEADER = """\
 翻译以下学术论文段落至{target_lang}。
 
 重要事项：
@@ -155,8 +191,9 @@ _TRANSLATE_PROMPT_BASE = """\
 - 保留 LaTeX 公式（$...$, $$...$$）不翻译
 - 保留代码块（```...```）不翻译
 - 保留图片引用（![...](...)）不翻译
-- 保留作者姓名和引用格式（如 [Smith et al., 2023]）
-{terminology_rule}\
+- 保留作者姓名和引用格式（如 [Smith et al., 2023]）"""
+
+_TRANSLATE_PROMPT_FOOTER = """\
 - 只返回翻译文本，不要任何解释
 
 原文：
@@ -164,18 +201,21 @@ _TRANSLATE_PROMPT_BASE = """\
 
 # Terminology annotation rules per target language
 _TERMINOLOGY_RULES: dict[str, str] = {
-    "zh": "- 对于专业术语，在首次出现时用「英文 (中文翻译)」格式\n",
-    "ja": "- 専門用語は初出時に「英語 (日本語訳)」の形式で記載すること\n",
-    "ko": "- 전문 용어는 처음 등장할 때 「영어 (한국어 번역)」 형식을 사용\n",
+    "zh": "- 对于专业术语，在首次出现时用「英文 (中文翻译)」格式",
+    "ja": "- 専門用語は初出時に「英語 (日本語訳)」の形式で記載すること",
+    "ko": "- 전문 용어는 처음 등장할 때 「영어 (한국어 번역)」 형식을 사용",
 }
 
 
 def _build_translate_prompt(text: str, target_lang: str, lang_name: str) -> str:
     """Build the translation prompt with language-appropriate terminology rule."""
-    rule = _TERMINOLOGY_RULES.get(target_lang, "")
-    return _TRANSLATE_PROMPT_BASE.format(
-        target_lang=lang_name, terminology_rule=rule, text=text,
-    )
+    header = _TRANSLATE_PROMPT_HEADER.format(target_lang=lang_name)
+    rule = _TERMINOLOGY_RULES.get(target_lang)
+    parts = [header]
+    if rule:
+        parts.append(rule)
+    parts.append(_TRANSLATE_PROMPT_FOOTER.format(text=text))
+    return "\n".join(parts)
 
 
 def _translate_chunk(text: str, target_lang: str, config: Config, timeout: int | None = None) -> str:
@@ -209,6 +249,13 @@ def _translate_chunk(text: str, target_lang: str, config: Config, timeout: int |
 # ============================================================================
 
 
+# Skip reason constants for translate_paper
+SKIP_NO_MD = "no_paper_md"
+SKIP_ALREADY_EXISTS = "already_exists"
+SKIP_EMPTY = "empty_source"
+SKIP_SAME_LANG = "same_language"
+
+
 def translate_paper(
     paper_dir: Path,
     config: Config,
@@ -220,6 +267,10 @@ def translate_paper(
 
     The translation is saved as ``paper_{lang}.md`` in the same directory.
     Original ``paper.md`` is preserved.
+
+    Sets ``translate_paper.skip_reason`` to a constant string when returning
+    ``None``, so callers can distinguish the cause (e.g. ``SKIP_NO_MD``,
+    ``SKIP_SAME_LANG``).
 
     Args:
         paper_dir: Paper directory containing ``paper.md``.
@@ -236,6 +287,7 @@ def translate_paper(
 
     if not md_path.exists():
         _log.debug("no paper.md in %s, skipping", paper_dir.name)
+        translate_paper.skip_reason = SKIP_NO_MD  # type: ignore[attr-defined]
         return None
 
     if out_path.exists() and not force:
@@ -244,12 +296,14 @@ def translate_paper(
 
     text = md_path.read_text(encoding="utf-8", errors="replace")
     if not text.strip():
+        translate_paper.skip_reason = SKIP_EMPTY  # type: ignore[attr-defined]
         return None
 
     # Detect source language — skip if already target
     src_lang = detect_language(text)
     if src_lang == lang:
         _log.debug("paper already in target language (%s), skipping", lang)
+        translate_paper.skip_reason = SKIP_SAME_LANG  # type: ignore[attr-defined]
         return None
 
     # Chunk and translate

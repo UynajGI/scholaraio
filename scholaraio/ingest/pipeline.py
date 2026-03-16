@@ -1059,6 +1059,15 @@ def run_pipeline(
             - ``inbox_dir`` (Path): 自定义 inbox 目录。
             - ``papers_dir`` (Path): 自定义 papers 目录。
     """
+    # Auto-inject translate step when config.translate.auto_translate is enabled
+    if cfg.translate.auto_translate and "translate" not in step_names and "translate" in STEPS:
+        # Insert translate before global-scope steps (embed/index)
+        first_global = next(
+            (i for i, n in enumerate(step_names) if n in STEPS and STEPS[n].scope == "global"),
+            len(step_names),
+        )
+        step_names = step_names[:first_global] + ["translate"] + step_names[first_global:]
+
     # Validate steps
     for name in step_names:
         if name not in STEPS:

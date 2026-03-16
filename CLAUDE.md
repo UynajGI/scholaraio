@@ -235,6 +235,7 @@ data/pending/
 
 pending.json 中 `issue` 字段标识原因：
 - `no_doi` — 无 DOI 且非 thesis/patent，需人工确认后补充 DOI 再入库
+- `no_pub_num` — 专利 inbox 未提取到公开号，需人工确认或补录公开号
 - `duplicate` — DOI 或专利公开号与已入库论文重复（含 `duplicate_of` 字段指向已有论文目录名），用户可决定覆盖
 
 注：thesis 自动入库（来自 thesis inbox 或 LLM 判定），不经过 pending。

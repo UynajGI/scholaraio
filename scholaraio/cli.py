@@ -736,7 +736,17 @@ def cmd_translate(args: argparse.Namespace, cfg) -> None:
         if result:
             ui(f"翻译完成: {result}")
         else:
-            ui("跳过（已是目标语言或翻译已存在，使用 --force 强制重新翻译）")
+            from scholaraio.translate import SKIP_EMPTY, SKIP_NO_MD, SKIP_SAME_LANG
+
+            reason = getattr(translate_paper, "skip_reason", "")
+            if reason == SKIP_NO_MD:
+                ui("跳过: 该论文目录下无 paper.md 文件")
+            elif reason == SKIP_EMPTY:
+                ui("跳过: paper.md 内容为空")
+            elif reason == SKIP_SAME_LANG:
+                ui(f"跳过: 论文已是目标语言 ({target_lang})")
+            else:
+                ui("跳过（已是目标语言或翻译已存在，使用 --force 强制重新翻译）")
     elif args.all:
         ui(f"批量翻译 → {target_lang}")
         stats = batch_translate(papers_dir, cfg, target_lang=target_lang, force=args.force)

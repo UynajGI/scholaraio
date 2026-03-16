@@ -236,9 +236,11 @@ data/pending/
 
 `pending.json` `issue` field indicates the reason:
 - `no_doi` — No DOI and not a thesis; needs manual confirmation before adding DOI and ingesting
-- `duplicate` — DOI duplicates an existing paper (includes `duplicate_of` field pointing to existing paper directory); user can decide to overwrite
+- `no_pub_num` — Patent inbox could not extract a publication number; needs manual confirmation or number entry
+- `duplicate` — DOI or patent publication number duplicates an existing paper (includes `duplicate_of` field pointing to existing paper directory); user can decide to overwrite
 
 Note: Theses are auto-ingested (from thesis inbox or LLM classification) and never go to pending.
+Patents are auto-ingested (from patent inbox), deduplicated by publication number, and never go to pending (except when no publication number is extracted).
 
 ### data/explore/ Directory
 
