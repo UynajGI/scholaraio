@@ -672,6 +672,13 @@ def step_translate(json_path: Path, cfg: Config, opts: dict) -> StepResult:
         return StepResult.OK
 
     target_lang = opts.get("translate_lang") or cfg.translate.target_lang
+    try:
+        from scholaraio.translate import validate_lang
+
+        target_lang = validate_lang(target_lang)
+    except ValueError as exc:
+        ui(f"  跳过翻译（语言无效: {exc}）")
+        return StepResult.SKIP
     force = opts.get("force", False)
     tr = translate_paper(paper_d, cfg, target_lang=target_lang, force=force)
     if not tr.ok:
@@ -1993,12 +2000,25 @@ def _ensure_registry_schema(conn, db_path: Path) -> None:
         conn.execute("SELECT publication_number FROM papers_registry LIMIT 0")
     except sqlite3.OperationalError:
         conn.execute("ALTER TABLE papers_registry ADD COLUMN publication_number TEXT")
-    # Ensure UNIQUE partial index exists (matches index.py schema)
-    conn.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_registry_publication_number "
-        "ON papers_registry(publication_number) "
-        "WHERE publication_number IS NOT NULL AND publication_number != ''"
-    )
+    # Ensure UNIQUE partial index exists (matches index.py schema).
+    # Pre-migration data may contain duplicates, so catch IntegrityError
+    # and fall back to a non-unique index rather than silently breaking.
+    try:
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_registry_publication_number "
+            "ON papers_registry(publication_number) "
+            "WHERE publication_number IS NOT NULL AND publication_number != ''"
+        )
+    except sqlite3.IntegrityError:
+        _log.warning(
+            "Duplicate publication_number values found; "
+            "creating non-unique index. Run 'scholaraio index' to rebuild."
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_registry_publication_number "
+            "ON papers_registry(publication_number) "
+            "WHERE publication_number IS NOT NULL AND publication_number != ''"
+        )
     _registry_migrated.add(db_path)
 
 
