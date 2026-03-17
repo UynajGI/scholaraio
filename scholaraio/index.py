@@ -151,6 +151,21 @@ def build_index(papers_dir: Path, db_path: Path, rebuild: bool = False) -> int:
             conn.execute(_REGISTRY_PUBNUM_INDEX)
         except sqlite3.OperationalError:
             pass
+        except sqlite3.IntegrityError:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "cannot create UNIQUE index on publication_number: duplicate values exist; "
+                "falling back to non-unique index"
+            )
+            try:
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_registry_publication_number "
+                    "ON papers_registry(publication_number) "
+                    "WHERE publication_number IS NOT NULL AND publication_number != ''"
+                )
+            except sqlite3.OperationalError:
+                pass
         try:
             conn.execute(_CITATIONS_IDX_TARGET_DOI)
         except sqlite3.OperationalError:

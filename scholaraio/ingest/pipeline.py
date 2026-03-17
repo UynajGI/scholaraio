@@ -410,7 +410,16 @@ def step_dedup(ctx: InboxCtx) -> StepResult:
             ctx.meta.paper_type = "patent"
             ctx.is_patent = True
             pub_num = (ctx.meta.publication_number or "").upper().strip()
-            if pub_num and ctx.existing_pub_nums and pub_num in ctx.existing_pub_nums:
+            if not pub_num:
+                # Patent detected but no publication number — needs manual review
+                _move_to_pending(
+                    ctx,
+                    issue="no_pub_num",
+                    message="检测为专利但未提取到公开号，需人工确认",
+                )
+                ctx.status = "needs_review"
+                return StepResult.FAIL
+            if ctx.existing_pub_nums and pub_num in ctx.existing_pub_nums:
                 existing_json = ctx.existing_pub_nums[pub_num]
                 _move_to_pending(
                     ctx,
@@ -662,10 +671,10 @@ def step_translate(json_path: Path, cfg: Config, opts: dict) -> StepResult:
 
     target_lang = opts.get("translate_lang") or cfg.translate.target_lang
     force = opts.get("force", False)
-    result = translate_paper(paper_d, cfg, target_lang=target_lang, force=force)
-    if result is None:
+    tr = translate_paper(paper_d, cfg, target_lang=target_lang, force=force)
+    if not tr.ok:
         return StepResult.SKIP
-    ui(f"  已翻译: {result.name}")
+    ui(f"  已翻译: {tr.path.name}")  # type: ignore[union-attr]
     return StepResult.OK
 
 

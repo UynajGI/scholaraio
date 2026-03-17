@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -26,6 +27,9 @@ if TYPE_CHECKING:
     from scholaraio.config import Config
 
 _log = logging.getLogger(__name__)
+
+# Strict pattern for language codes — prevents path traversal via lang parameter
+_LANG_CODE_RE = re.compile(r"^[a-z]{2,5}$")
 
 # Language name mapping for prompts
 _LANG_NAMES = {
@@ -193,11 +197,21 @@ def _split_into_chunks(text: str, chunk_size: int) -> list[str]:
     if current:
         chunks.append("\n\n".join(current))
 
-    # Restore protected blocks in each chunk
+    # Restore protected blocks in each chunk; warn if restoration inflates beyond limit
     def _restore(chunk: str) -> str:
         return _PLACEHOLDER_RE.sub(lambda m: protected[int(m.group(1))], chunk)
 
-    return [_restore(c) for c in chunks]
+    restored = [_restore(c) for c in chunks]
+    for i, c in enumerate(restored):
+        if len(c) > chunk_size * 2:
+            _log.warning(
+                "chunk %d/%d restored to %d chars (limit %d) due to large protected blocks",
+                i + 1,
+                len(restored),
+                len(c),
+                chunk_size,
+            )
+    return restored
 
 
 # ============================================================================
@@ -270,11 +284,41 @@ def _translate_chunk(text: str, target_lang: str, config: Config, timeout: int |
 # ============================================================================
 
 
-# Skip reason constants for translate_paper
+# Skip reason constants for TranslateResult
 SKIP_NO_MD = "no_paper_md"
 SKIP_ALREADY_EXISTS = "already_exists"
 SKIP_EMPTY = "empty_source"
 SKIP_SAME_LANG = "same_language"
+
+
+def _validate_lang(lang: str) -> str:
+    """Validate and return a safe language code.
+
+    Raises:
+        ValueError: If ``lang`` contains path separators or doesn't match
+            the ``[a-z]{2,5}`` pattern (ISO 639-1/3).
+    """
+    if not _LANG_CODE_RE.match(lang):
+        raise ValueError(f"invalid language code: {lang!r} (expected 2-5 lowercase letters)")
+    return lang
+
+
+@dataclass
+class TranslateResult:
+    """Thread-safe result from :func:`translate_paper`.
+
+    Attributes:
+        path: Path to the translated file, or ``None`` if skipped/failed.
+        skip_reason: Why the translation was skipped (one of ``SKIP_*`` constants),
+            or empty string if translated successfully.
+    """
+
+    path: Path | None = None
+    skip_reason: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.path is not None
 
 
 def translate_paper(
@@ -283,15 +327,11 @@ def translate_paper(
     *,
     target_lang: str | None = None,
     force: bool = False,
-) -> Path | None:
+) -> TranslateResult:
     """Translate a paper's markdown to the target language.
 
     The translation is saved as ``paper_{lang}.md`` in the same directory.
     Original ``paper.md`` is preserved.
-
-    Sets ``translate_paper.skip_reason`` to a constant string when returning
-    ``None``, so callers can distinguish the cause (e.g. ``SKIP_NO_MD``,
-    ``SKIP_SAME_LANG``).
 
     Args:
         paper_dir: Paper directory containing ``paper.md``.
@@ -300,33 +340,29 @@ def translate_paper(
         force: Re-translate even if translation file already exists.
 
     Returns:
-        Path to the translated file, or ``None`` if skipped/failed.
+        :class:`TranslateResult` with ``path`` (or ``None``) and ``skip_reason``.
     """
-    lang = target_lang or config.translate.target_lang
+    lang = _validate_lang(target_lang or config.translate.target_lang)
     md_path = paper_dir / "paper.md"
     out_path = paper_dir / f"paper_{lang}.md"
 
     if not md_path.exists():
         _log.debug("no paper.md in %s, skipping", paper_dir.name)
-        translate_paper.skip_reason = SKIP_NO_MD  # type: ignore[attr-defined]
-        return None
+        return TranslateResult(skip_reason=SKIP_NO_MD)
 
     if out_path.exists() and not force:
         _log.debug("translation already exists: %s", out_path.name)
-        translate_paper.skip_reason = SKIP_ALREADY_EXISTS  # type: ignore[attr-defined]
-        return None
+        return TranslateResult(skip_reason=SKIP_ALREADY_EXISTS)
 
     text = md_path.read_text(encoding="utf-8", errors="replace")
     if not text.strip():
-        translate_paper.skip_reason = SKIP_EMPTY  # type: ignore[attr-defined]
-        return None
+        return TranslateResult(skip_reason=SKIP_EMPTY)
 
     # Detect source language — skip if already target
     src_lang = detect_language(text)
     if src_lang == lang:
         _log.debug("paper already in target language (%s), skipping", lang)
-        translate_paper.skip_reason = SKIP_SAME_LANG  # type: ignore[attr-defined]
-        return None
+        return TranslateResult(skip_reason=SKIP_SAME_LANG)
 
     # Chunk and translate
     chunk_size = config.translate.chunk_size
@@ -350,7 +386,7 @@ def translate_paper(
     # Record translation metadata in meta.json
     _record_translation_meta(paper_dir, lang, src_lang, config)
 
-    return out_path
+    return TranslateResult(path=out_path)
 
 
 def batch_translate(
@@ -395,10 +431,8 @@ def batch_translate(
 
     def _do_one(pdir: Path) -> str:
         try:
-            result = translate_paper(pdir, config, target_lang=lang, force=force)
-            if result is None:
-                return "skipped"
-            return "translated"
+            tr = translate_paper(pdir, config, target_lang=lang, force=force)
+            return "translated" if tr.ok else "skipped"
         except Exception as e:
             _log.error("translation failed for %s: %s", pdir.name, e)
             return "failed"
