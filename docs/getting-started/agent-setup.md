@@ -89,16 +89,42 @@ mkdir -p ~/.agents/skills
 ln -s ~/.codex/scholaraio/.claude/skills ~/.agents/skills/scholaraio
 ```
 
+Make config discovery explicit for cross-project use:
+
+```bash
+# Option A: keep ScholarAIO data rooted in the cloned repo
+export SCHOLARAIO_CONFIG="$HOME/.codex/scholaraio/config.yaml"
+
+# Option B: move/copy the config into the global fallback location
+mkdir -p ~/.scholaraio
+cp ~/.codex/scholaraio/config.yaml ~/.scholaraio/config.yaml
+```
+
+Without one of those two options, running `scholaraio` from another project may fall back to defaults rooted in that current project and create `data/` plus `workspace/` there.
+
 Restart Codex or OpenClaw after creating the symlink.
 
 ### Windows
 
-Use a junction instead of a symlink:
+Clone the repo somewhere stable first, for example:
 
 ```powershell
-New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.agents\skills"
-cmd /c mklink /J "$env:USERPROFILE\.agents\skills\scholaraio" "$env:USERPROFILE\.codex\scholaraio\.claude\skills"
+git clone https://github.com/ZimoLiao/scholaraio.git "$env:USERPROFILE\.codex\scholaraio"
+cd "$env:USERPROFILE\.codex\scholaraio"
+pip install -e ".[full]"
+scholaraio setup
 ```
+
+Then use a junction instead of a symlink:
+
+```powershell
+$repoRoot = "$env:USERPROFILE\.codex\scholaraio"
+
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.agents\skills"
+cmd /c mklink /J "$env:USERPROFILE\.agents\skills\scholaraio" "$repoRoot\.claude\skills"
+```
+
+For cross-project use on Windows, either set `SCHOLARAIO_CONFIG` to `"$repoRoot\config.yaml"` or copy that config to `$env:USERPROFILE\.scholaraio\config.yaml`.
 
 ### What this gives you
 
@@ -117,6 +143,8 @@ For tools that do not have a documented cross-project skill installation path he
 Start the server after installing ScholarAIO:
 
 ```bash
+# if you did not install .[full], add the MCP extra first
+pip install -e ".[mcp]"
 scholaraio-mcp
 ```
 

@@ -85,17 +85,31 @@ claude
 git clone https://github.com/ZimoLiao/scholaraio.git ~/.codex/scholaraio
 cd ~/.codex/scholaraio
 pip install -e ".[full]"
+scholaraio setup
 mkdir -p ~/.agents/skills
 ln -s ~/.codex/scholaraio/.claude/skills ~/.agents/skills/scholaraio
 ```
 
-创建符号链接后重启 agent。这会把 ScholarAIO skills 全局注册进去；如果你还想让 agent 同时读取仓库自带的完整项目指令，仍然建议直接打开本仓库。
+然后明确配置发现路径，避免在其他项目目录里误创建 `data/` 和 `workspace/`：
+
+```bash
+# 方案 A：让 ScholarAIO 数据继续放在克隆仓库目录下
+export SCHOLARAIO_CONFIG="$HOME/.codex/scholaraio/config.yaml"
+
+# 方案 B：把配置放到全局默认位置
+mkdir -p ~/.scholaraio
+cp ~/.codex/scholaraio/config.yaml ~/.scholaraio/config.yaml
+```
+
+如果不做这一步，在其他项目目录里运行 `scholaraio` 时，程序可能回退到当前项目下的默认配置并在那里创建 `data/` 和 `workspace/`。创建符号链接后重启 agent，这样 ScholarAIO skills 才会被全局发现；如果你还想让 agent 同时读取仓库自带的完整项目指令，仍然建议直接打开本仓库。
 
 ### MCP 服务器
 
 对于 Cursor、Claude Desktop 和其他 MCP 客户端，最稳定的跨项目集成方式是 MCP：
 
 ```bash
+# 如果你不是用 .[full] 安装，先补装 MCP 依赖
+pip install -e ".[mcp]"
 scholaraio-mcp
 ```
 

@@ -85,17 +85,31 @@ If you want ScholarAIO available to Codex-style agents outside this repo, clone 
 git clone https://github.com/ZimoLiao/scholaraio.git ~/.codex/scholaraio
 cd ~/.codex/scholaraio
 pip install -e ".[full]"
+scholaraio setup
 mkdir -p ~/.agents/skills
 ln -s ~/.codex/scholaraio/.claude/skills ~/.agents/skills/scholaraio
 ```
 
-Restart the agent after creating the symlink. This registers the ScholarAIO skill library globally. For the full bundled project instructions, opening this repository directly is still the better path.
+Then make config discovery explicit for cross-project use:
+
+```bash
+# Option A: keep ScholarAIO data rooted in the cloned repo
+export SCHOLARAIO_CONFIG="$HOME/.codex/scholaraio/config.yaml"
+
+# Option B: move/copy config to the global fallback location
+mkdir -p ~/.scholaraio
+cp ~/.codex/scholaraio/config.yaml ~/.scholaraio/config.yaml
+```
+
+Without one of those two options, running `scholaraio` from another project may fall back to defaults rooted in that current project and create `data/` plus `workspace/` there. Restart the agent after creating the symlink. This registers the ScholarAIO skill library globally. For the full bundled project instructions, opening this repository directly is still the better path.
 
 ### MCP server
 
 For Cursor, Claude Desktop, and other MCP-compatible clients, the stable integration path is the MCP server:
 
 ```bash
+# install the optional MCP dependencies first if you did not use .[full]
+pip install -e ".[mcp]"
 scholaraio-mcp
 ```
 
