@@ -122,7 +122,7 @@ See the full setup matrix in [`docs/getting-started/agent-setup.md`](docs/gettin
 |  | Feature | Details |
 |--|---------|---------|
 | **PDF Parsing** | Deep structure extraction | [MinerU](https://github.com/opendatalab/MinerU) → Markdown with figures, tables, LaTeX equations preserved. Long PDFs (>100 pp) are auto-split and merged |
-| **Not Just Papers** | Any document goes in | Journal articles, theses, technical reports, standards, lecture notes — three inboxes for different document types, each with tailored metadata handling |
+| **Not Just Papers** | Any document goes in | Journal articles, theses, patents, technical reports, standards, lecture notes — four inboxes with tailored metadata handling |
 | **Hybrid Search** | Keyword + semantic fusion | Keyword + semantic embeddings → RRF ranking |
 | **Topic Discovery** | Auto-clustering | BERTopic + 6 interactive HTML visualizations — works on both your library and explore datasets |
 | **Literature Exploration** | Multi-dimensional discovery | OpenAlex with 9 filter dimensions (journal, concept, author, institution, keyword, source type, year, citations, work type) → embed → cluster → search |

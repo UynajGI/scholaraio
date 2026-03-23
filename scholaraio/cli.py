@@ -1697,7 +1697,11 @@ def cmd_ws(args: argparse.Namespace, cfg) -> None:
             return
         ui(f"工作区 {args.name} 中找到 {len(results)} 篇:\n")
         for i, r in enumerate(results, 1):
-            _print_search_result(i, r, extra=f" [{r.get('match', '')}]")
+            extra = ""
+            match = r.get("match", "")
+            if match:
+                extra = f" [{match}]"
+            _print_search_result(i, r, extra=extra)
         _print_search_next_steps(include_ws_add=False)
 
     elif action == "export":
