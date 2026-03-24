@@ -234,51 +234,69 @@ def enrich_toc(
     lines = md_path.read_text(encoding="utf-8", errors="replace").splitlines()
     raw_headers = _extract_headers(lines)
 
-    _log.debug("regex found %d headers, sending to LLM", len(raw_headers))
+    _log.debug("regex found %d headers", len(raw_headers))
 
-    prompt = (
-        "The following are ALL lines starting with '#' extracted from an academic paper "
-        "markdown file (converted from PDF by MinerU). Some are real section headers; "
-        "others are NOISE to discard: author running headers (e.g. '# Smith and others'), "
-        "journal name headers (e.g. '# Journal of Fluid Mechanics'), repeated paper titles, "
-        "or publisher metadata (e.g. '# ARTICLEINFO', '# AFFILIATIONS', '# Articles You May Be Interested In').\n\n"
-        "KEEP the following as real headers (they are needed as section boundary markers):\n"
-        "- Numbered/lettered sections and subsections\n"
-        "- Introduction, Abstract, Conclusion, Conclusions, Concluding Remarks, Summary\n"
-        "- References, Bibliography\n"
-        "- Appendix (any variant)\n"
-        "- Post-matter sections: Acknowledgments, Acknowledgements, Funding, "
-        "CRediT authorship contribution statement, Declaration of competing interest, "
-        "Conflict of interest, Data availability, Author contributions, Author ORCIDs, "
-        "Declaration of interests\n\n"
-        "Assign level: 1=top-level, 2=subsection (e.g. '2.1'), 3=sub-subsection (e.g. '2.1.1').\n\n"
-        "Headers:\n"
-        + "\n".join(f"Line {h['line']}: {'#' * h['level']} {h['text']}" for h in raw_headers)
-        + "\n\nReturn JSON only:\n"
-        '{"toc": [{"line": <N>, "level": <1|2|3>, "title": "<title>"}, ...]}'
-    )
+    # Threshold: if many headers, rules are more reliable than LLM
+    # (LLM struggles to output 100+ JSON entries without format errors)
+    _RULE_THRESHOLD = 80
 
-    try:
-        result = _parse_json(_call_llm(prompt, config, timeout=config.llm.timeout_toc))
-        toc = result.get("toc") or []
-        if not toc:
-            _log.error("LLM returned empty TOC")
-            return False
+    title = data.get("title", "")
+    toc: list[dict] | None = None
 
-        _log.debug("LLM kept %d real headers", len(toc))
-        for entry in toc:
-            indent = "  " * (entry.get("level", 1) - 1)
-            _log.debug("  line %4d  %s%s", entry["line"], indent, entry["title"])
+    if len(raw_headers) >= _RULE_THRESHOLD:
+        _log.debug("header count %d >= %d, using rule-based extraction",
+                    len(raw_headers), _RULE_THRESHOLD)
+        toc = _toc_from_rules(raw_headers, title)
+        if toc:
+            _log.debug("rule-based extraction: %d entries", len(toc))
 
-        data["toc"] = toc
-        data["toc_extracted_at"] = datetime.now().isoformat(timespec="seconds")
-        write_meta(paper_d, data)
-        _log.debug("TOC written to JSON")
-        return True
+    if toc is None:
+        # LLM path for normal papers
+        _log.debug("sending %d headers to LLM", len(raw_headers))
+        prompt = (
+            "The following are ALL lines starting with '#' extracted from an academic paper "
+            "markdown file (converted from PDF by MinerU). Some are real section headers; "
+            "others are NOISE to discard: author running headers (e.g. '# Smith and others'), "
+            "journal name headers (e.g. '# Journal of Fluid Mechanics'), repeated paper titles, "
+            "or publisher metadata (e.g. '# ARTICLEINFO', '# AFFILIATIONS', '# Articles You May Be Interested In').\n\n"
+            "KEEP the following as real headers (they are needed as section boundary markers):\n"
+            "- Numbered/lettered sections and subsections\n"
+            "- Introduction, Abstract, Conclusion, Conclusions, Concluding Remarks, Summary\n"
+            "- References, Bibliography\n"
+            "- Appendix (any variant)\n"
+            "- Post-matter sections: Acknowledgments, Acknowledgements, Funding, "
+            "CRediT authorship contribution statement, Declaration of competing interest, "
+            "Conflict of interest, Data availability, Author contributions, Author ORCIDs, "
+            "Declaration of interests\n\n"
+            "Assign level: 1=top-level, 2=subsection (e.g. '2.1'), 3=sub-subsection (e.g. '2.1.1').\n\n"
+            "Headers:\n"
+            + "\n".join(f"Line {h['line']}: {'#' * h['level']} {h['text']}" for h in raw_headers)
+            + "\n\nReturn JSON only:\n"
+            '{"toc": [{"line": <N>, "level": <1|2|3>, "title": "<title>"}, ...]}'
+        )
 
-    except Exception as e:
-        _log.error("TOC extraction failed: %s", e)
+        try:
+            result = _parse_json(_call_llm(prompt, config, timeout=config.llm.timeout_toc))
+            toc = result.get("toc") or []
+        except Exception as e:
+            _log.error("TOC extraction failed: %s", e)
+            # fallback: try rules even for small docs
+            toc = _toc_from_rules(raw_headers, title)
+
+    if not toc:
+        _log.error("could not extract TOC (both rules and LLM failed)")
         return False
+
+    _log.debug("final TOC: %d entries", len(toc))
+    for entry in toc:
+        indent = "  " * (entry.get("level", 1) - 1)
+        _log.debug("  line %4d  %s%s", entry["line"], indent, entry["title"])
+
+    data["toc"] = toc
+    data["toc_extracted_at"] = datetime.now().isoformat(timespec="seconds")
+    write_meta(paper_d, data)
+    _log.debug("TOC written to JSON")
+    return True
 
 
 # ============================================================================
@@ -452,6 +470,169 @@ def _extract_headers(lines: list[str]) -> list[dict]:
         if m:
             headers.append({"line": i, "level": len(m.group(1)), "text": m.group(2).strip()})
     return headers
+
+
+# -- regex-based TOC extraction (no LLM) ------------------------------------
+
+# Numbered section pattern: "1", "1.2", "1.2.3", with optional trailing dot
+# Also matches "1.", "2.1.", "1.2.3." (common in some journals/books)
+# Allows number followed by space, CJK char, or dot-then-space
+_RE_NUMBERED = re.compile(r"^(\d+(?:\.\d+)*)\.?(?:\s|(?=[\u4e00-\u9fff]))")
+# "Chapter 1 Title" or Chinese "第一章" / "第1章" pattern
+_RE_CHAPTER = re.compile(r"^Chapter\s+(\d+)\b", re.IGNORECASE)
+_RE_CHAPTER_ZH = re.compile(
+    r"^第\s*([一二三四五六七八九十百\d]+)\s*章"
+)
+# TOC-area entries have trailing page numbers like "Title 123" or "Title . 123"
+# Require >= 2 digits to avoid matching "Chapter 1", "Part 2", etc.
+_RE_TRAILING_PAGE = re.compile(r"[.\s]\s*\d{2,4}\s*$")
+# Well-known structural sections (unnumbered)
+_KNOWN_SECTIONS = {
+    "abstract", "introduction", "preface", "foreword",
+    "conclusion", "conclusions", "concluding remarks", "summary",
+    "references", "bibliography", "index",
+    "acknowledgments", "acknowledgements", "funding",
+    "appendix", "glossary", "nomenclature", "notation",
+}
+
+
+def _toc_from_rules(
+    raw_headers: list[dict], title: str
+) -> list[dict] | None:
+    """Try to build TOC purely from rules. Returns list of toc entries or None.
+
+    Strategy:
+    1. Detect and skip a TOC area (headers with trailing page numbers).
+    2. Filter noise: repeated paper title, author lines, metadata lines.
+    3. Infer level from numbering (1 → l1, 1.2 → l2, 1.2.3 → l3).
+    4. Keep well-known unnumbered sections as level 1.
+    """
+    if not raw_headers:
+        return None
+
+    # normalised title words for matching
+    title_lower = title.lower().strip() if title else ""
+
+    # --- pass 1: skip TOC/front-matter area ---
+    # PDF books have a printed table-of-contents with trailing page numbers
+    # ("1.2 Title ... 23"), followed by front-matter (preface, notation,
+    # etc.) before the real body starts.  We find the last page-number
+    # header in the first 10% of lines, then advance past any remaining
+    # front-matter until we hit a real body-start marker.
+    total_lines = raw_headers[-1]["line"] if raw_headers else 1
+    toc_cutoff_line = max(total_lines * 0.10, 500)
+    page_indices = [
+        idx for idx, h in enumerate(raw_headers)
+        if h["line"] <= toc_cutoff_line
+        and _RE_TRAILING_PAGE.search(h["text"])
+    ]
+    if len(page_indices) >= 5:
+        body_start = page_indices[-1] + 1
+    else:
+        body_start = 0
+
+    # Advance past remaining front-matter noise until we hit a body-start
+    # marker: "Chapter 1", numbered section "1" or "1.1", or known
+    # front-matter sections (Preface, Foreword, Introduction, Notation).
+    _FRONT_SECTIONS = {
+        "preface", "foreword", "notation", "symbols",
+        "acknowledgments", "acknowledgements", "introduction",
+    }
+    for idx in range(body_start, len(raw_headers)):
+        h = raw_headers[idx]
+        text = h["text"]
+        text_lower = text.lower().strip()
+        # "Chapter 1" or "Chapter N" or "第一章"
+        if _RE_CHAPTER.match(text) or _RE_CHAPTER_ZH.match(text):
+            body_start = idx
+            break
+        # Numbered section starting from "1" (top-level chapter)
+        m = _RE_NUMBERED.match(text)
+        if m and m.group(1).split(".")[0] == "1":
+            body_start = idx
+            break
+        # Known front-matter sections that appear before Chapter 1
+        if text_lower.split(" to ")[0].strip().rstrip("s") in (
+            "preface", "foreword", "notation", "symbol",
+            "acknowledgment", "acknowledgement",
+        ) or text_lower.startswith("preface") or text_lower in (
+            "摘要", "前言", "序言", "绪论",
+        ):
+            body_start = idx
+            break
+    body_headers = raw_headers[body_start:]
+
+    if not body_headers:
+        body_headers = raw_headers  # fallback: no TOC area detected
+
+    # --- pass 2: detect running headers (appear >= 3 times) ---
+    from collections import Counter
+    text_counts = Counter(h["text"].lower().strip() for h in body_headers)
+    running_headers = {t for t, c in text_counts.items() if c >= 3}
+
+    # --- pass 3: filter noise ---
+    toc = []
+    for h in body_headers:
+        text = h["text"]
+        text_lower = text.lower().strip()
+
+        # skip running headers (repeated page headers from PDF)
+        if text_lower in running_headers:
+            continue
+
+        # skip if it matches the paper/book title
+        if title_lower and _similar_title(text_lower, title_lower):
+            continue
+        # skip common metadata noise
+        if text_lower in (
+            "contents", "table of contents", "acronyms", "abbreviations",
+            "articleinfo", "affiliations",
+            "目录", "插图目录", "表格目录",
+        ):
+            continue
+
+        # --- infer level ---
+        m_num = _RE_NUMBERED.match(text)
+        m_chap = _RE_CHAPTER.match(text)
+        m_chap_zh = _RE_CHAPTER_ZH.match(text)
+        if m_chap:
+            # "Chapter 3 Title" → level 1, strip "Chapter N" prefix for clean title
+            clean = text[m_chap.end():].strip()
+            num = m_chap.group(1)
+            final_title = f"{num} {clean}" if clean else f"Chapter {num}"
+            toc.append({"line": h["line"], "level": 1, "title": final_title})
+        elif m_chap_zh:
+            # "第一章 绪论" → level 1, keep original text
+            toc.append({"line": h["line"], "level": 1, "title": text})
+        elif m_num:
+            num_str = m_num.group(1)
+            depth = num_str.count(".") + 1  # "1"→1, "1.2"→2, "1.2.3"→3
+            level = min(depth, 3)
+            # strip trailing page-number-like remnants (shouldn't exist in body, but be safe)
+            clean_text = _RE_TRAILING_PAGE.sub("", text).strip().rstrip(".")
+            toc.append({"line": h["line"], "level": level, "title": clean_text})
+        elif text_lower.split(",")[0].strip() in _KNOWN_SECTIONS or any(
+            text_lower.startswith(s) for s in ("appendix",)
+        ) or text in (
+            "摘要", "前言", "绪论", "结论", "总结",
+            "参考文献", "致谢", "附录",
+        ):
+            toc.append({"line": h["line"], "level": 1, "title": text})
+        # else: skip (unnumbered, unknown → likely noise)
+
+    return toc if toc else None
+
+
+def _similar_title(a: str, b: str) -> bool:
+    """Check if two titles are similar enough to be considered duplicates."""
+    # simple: one contains the other, or >80% word overlap
+    if a == b or a in b or b in a:
+        return True
+    wa, wb = set(a.split()), set(b.split())
+    if not wa or not wb:
+        return False
+    overlap = len(wa & wb) / max(len(wa), len(wb))
+    return overlap > 0.8
 
 
 def _primary_path(
