@@ -243,15 +243,27 @@ def cmd_search(args: argparse.Namespace, cfg) -> None:
 
 
 def cmd_show(args: argparse.Namespace, cfg) -> None:
-    from scholaraio.loader import load_l1, load_l2, load_l3, load_l4
+    from scholaraio.loader import load_l1, load_l2, load_l3, load_l4, load_notes, append_notes
     from scholaraio.metrics import get_store
 
     paper_d = _resolve_paper(args.paper_id, cfg)
     json_path = paper_d / "meta.json"
     md_path = paper_d / "paper.md"
 
+    # Handle --append-notes (append, then continue to show content)
+    if getattr(args, "append_notes", None):
+        append_notes(paper_d, args.append_notes)
+        ui(f"已追加笔记到 {paper_d.name}/notes.md")
+
     l1 = load_l1(json_path)
     _print_header(l1)
+
+    # Show existing agent notes (T2 layer) if available
+    notes = load_notes(paper_d)
+    if notes:
+        ui("\n--- Agent 笔记 (notes.md) ---\n")
+        ui(notes)
+        ui("\n--- 笔记结束 ---\n")
 
     store = get_store()
 
@@ -2748,6 +2760,8 @@ def main() -> None:
         help="加载层级：1=元数据, 2=摘要, 3=结论, 4=全文（默认 2）",
     )
     p_show.add_argument("--lang", type=str, default=None, help="加载翻译版本（如 zh），仅 L4 生效")
+    p_show.add_argument("--append-notes", type=str, default=None, metavar="TEXT",
+                        help="向论文笔记 notes.md 追加内容（T2 层，跨会话复用）")
 
     # --- embed ---
     p_embed = sub.add_parser("embed", help="生成语义向量写入 index.db")
