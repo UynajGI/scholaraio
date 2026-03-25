@@ -309,11 +309,13 @@ def _sanitize_for_filename(text: str, max_bytes: int = 255) -> str:
     # Truncate to max_bytes (respect multi-byte chars, cut at word boundary)
     encoded = text.encode("utf-8")
     if len(encoded) > max_bytes:
-        # Trim by bytes, then decode ignoring incomplete multibyte tail
-        text = encoded[:max_bytes].decode("utf-8", errors="ignore")
-        # Cut back to last word boundary if possible
+        trimmed = encoded[:max_bytes]
+        text = trimmed.decode("utf-8", errors="ignore")
+        # Only cut back to word boundary if we truncated mid-segment
         if "-" in text:
-            text = text.rsplit("-", 1)[0].strip("-")
+            next_byte = encoded[len(trimmed) : len(trimmed) + 1]
+            if not text.endswith("-") and next_byte != b"-":
+                text = text.rsplit("-", 1)[0].strip("-")
     return text
 
 
