@@ -258,7 +258,8 @@ def generate_new_stem(meta: PaperMetadata) -> str:
     year_str = str(meta.year) if meta.year else "XXXX"
     clean_title = _clean_title_for_filename(meta.title)
     stem = f"{lastname}-{year_str}-{clean_title}"
-    return _sanitize_for_filename(stem)
+    # Reserve 4 bytes for collision suffix (e.g. "-99")
+    return _sanitize_for_filename(stem, max_bytes=251)
 
 
 def _clean_title_for_filename(title: str) -> str:

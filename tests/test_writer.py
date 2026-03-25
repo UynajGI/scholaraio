@@ -152,7 +152,8 @@ class TestGenerateNewStem:
             title=r"$\mathrm{La}{\mathrm{BH}}_8$: Towards high-${T}_c$ low-pressure superconductivity in ternary superhydrides",
         )
         stem = generate_new_stem(meta)
-        assert len(stem.encode("utf-8")) <= 255
+        # 251 bytes for stem + 4 reserved for collision suffix (e.g. "-99")
+        assert len(stem.encode("utf-8")) <= 251
         assert "$" not in stem
         assert "\\" not in stem
         assert "{" not in stem
@@ -164,7 +165,7 @@ class TestGenerateNewStem:
             title="Word " * 100,
         )
         stem = generate_new_stem(meta)
-        assert len(stem.encode("utf-8")) <= 255
+        assert len(stem.encode("utf-8")) <= 251
 
     def test_chinese_title(self):
         meta = PaperMetadata(
