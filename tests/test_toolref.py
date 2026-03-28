@@ -49,6 +49,13 @@ def test_expand_search_query_adds_qe_aliases():
     assert "ecutrho" in expanded
 
 
+def test_expand_search_query_adds_lammps_and_bio_aliases():
+    lammps_expanded = _expand_search_query("lammps", "phase transition pressure")
+    assert "fix_nphug" in lammps_expanded
+    bio_expanded = _expand_search_query("bioinformatics", "spike mutation")
+    assert "bcftools" in bio_expanded
+
+
 def test_build_openfoam_manifest_uses_requested_version():
     manifest = _build_openfoam_manifest("2312")
     assert manifest

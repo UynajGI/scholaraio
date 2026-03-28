@@ -212,6 +212,9 @@ def _expand_search_query(tool: str, query: str) -> str:
             expansions.extend(["forces", "force coeffs", "forcecoeffs"])
         if "q criterion" in normalized:
             expansions.extend(["function objects", "post processing", "qcriterion", "q"])
+    elif tool == "lammps":
+        if "phase transition pressure" in normalized or "shock pressure" in normalized:
+            expansions.extend(["fix_nphug", "fix_msst", "fix_qbmsst", "shock"])
     elif tool == "qe":
         if "ecut rho" in normalized:
             expansions.append("ecutrho")
@@ -220,6 +223,8 @@ def _expand_search_query(tool: str, query: str) -> str:
     elif tool == "bioinformatics":
         if "phylogenetic tree" in normalized:
             expansions.extend(["iqtree", "mafft", "phylogenetics"])
+        if "mutation" in normalized:
+            expansions.extend(["bcftools", "samtools", "variant calling"])
 
     deduped: list[str] = []
     for item in expansions:
