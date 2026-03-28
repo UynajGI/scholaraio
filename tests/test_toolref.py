@@ -63,6 +63,17 @@ def test_build_openfoam_manifest_uses_requested_version():
     assert any("/2312/" in item["url"] for item in manifest if "doc.openfoam.com" in item["url"])
 
 
+def test_build_openfoam_manifest_includes_specific_mesh_and_post_pages():
+    manifest = _build_openfoam_manifest("2312")
+    pages = {item["page_name"]: item for item in manifest}
+
+    assert pages["openfoam/blockMesh"]["url"].endswith("/2312/tools/pre-processing/mesh/generation/blockMesh/blockmesh/")
+    assert pages["openfoam/forceCoeffs"]["url"].endswith(
+        "/2312/tools/post-processing/function-objects/forces/forceCoeffs/"
+    )
+    assert pages["openfoam/Q"]["url"].endswith("/2312/tools/post-processing/function-objects/field/Q/")
+
+
 def test_build_bioinformatics_manifest_contains_multiple_subtools():
     manifest = _build_bioinformatics_manifest("2026-03-curated")
     programs = {item["program"] for item in manifest}

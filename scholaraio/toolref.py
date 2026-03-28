@@ -261,8 +261,8 @@ def _build_openfoam_manifest(version: str) -> list[dict]:
             "program": "blockMesh",
             "section": "mesh",
             "page_name": "openfoam/blockMesh",
-            "title": "mesh generation overview",
-            "url": f"{base}/tools/pre-processing/mesh/generation/",
+            "title": "blockMesh",
+            "url": f"{base}/tools/pre-processing/mesh/generation/blockMesh/blockmesh/",
         },
         {
             "program": "snappyHexMesh",
@@ -297,7 +297,7 @@ def _build_openfoam_manifest(version: str) -> list[dict]:
             "section": "model",
             "page_name": "openfoam/kOmegaSST",
             "title": "kOmegaSST",
-            "url": "https://doc.openfoam.com/2212/tools/processing/models/turbulence/ras/linear-evm/rtm/kOmegaSST/",
+            "url": f"{base}/tools/processing/models/turbulence/ras/linear-evm/rtm/kOmegaSST/",
         },
         {
             "program": "functionObjects",
@@ -312,6 +312,20 @@ def _build_openfoam_manifest(version: str) -> list[dict]:
             "page_name": "openfoam/forces",
             "title": "forces",
             "url": f"{base}/tools/post-processing/function-objects/forces/",
+        },
+        {
+            "program": "forceCoeffs",
+            "section": "post-processing",
+            "page_name": "openfoam/forceCoeffs",
+            "title": "forceCoeffs",
+            "url": f"{base}/tools/post-processing/function-objects/forces/forceCoeffs/",
+        },
+        {
+            "program": "Q",
+            "section": "post-processing",
+            "page_name": "openfoam/Q",
+            "title": "Q",
+            "url": f"{base}/tools/post-processing/function-objects/field/Q/",
         },
     ]
 
