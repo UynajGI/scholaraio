@@ -5,8 +5,10 @@ import json
 from scholaraio.toolref import (
     _build_bioinformatics_manifest,
     _build_openfoam_manifest,
+    _clean_manifest_text,
     _has_local_docs,
     _normalize_program_filter,
+    _pick_manifest_synopsis,
     _parse_manifest_html,
 )
 
@@ -88,3 +90,63 @@ def test_has_local_docs_for_manifest_html(tmp_path, monkeypatch):
     for idx, item in enumerate(manifest, start=1):
         (pages_dir / f"{idx:03d}-{item['page_name'].replace('/', '-')}.html").write_text("<html></html>", encoding="utf-8")
     assert _has_local_docs("openfoam", "2312")
+
+
+def test_clean_manifest_text_removes_common_navigation_and_footer():
+    raw = """
+Top
+Toggle navigation
+simpleFoam
+- solvers
+Overview
+Steady-state incompressible solver.
+Search results
+Found a content problem with this page?
+"""
+    cleaned = _clean_manifest_text(raw, "simpleFoam", "simpleFoam")
+    assert "Toggle navigation" not in cleaned
+    assert "Search results" not in cleaned
+    assert "Steady-state incompressible solver." in cleaned
+
+
+def test_pick_manifest_synopsis_skips_generic_lines():
+    lines = ["simpleFoam", "- solvers", "Overview", "Steady-state incompressible solver."]
+    assert _pick_manifest_synopsis(lines, "simpleFoam") == "Steady-state incompressible solver."
+
+
+def test_clean_manifest_text_anchors_blast_manual():
+    raw = """
+Bookshelf
+Toggle navigation
+BLAST® Command Line Applications User Manual
+This manual documents the BLAST command line applications.
+Search results
+"""
+    cleaned = _clean_manifest_text(raw, "BLAST+ user manual", "blastn")
+    assert cleaned.startswith("BLAST")
+    assert "Bookshelf" not in cleaned
+
+
+def test_parse_manifest_html_uses_dictionary_synopsis(tmp_path):
+    html_path = tmp_path / "page.html"
+    meta_path = tmp_path / "page.json"
+    html_path.write_text(
+        """
+        <html><body><main><h1>fvSchemes</h1><pre><code>FoamFile {}</code></pre></main></body></html>
+        """,
+        encoding="utf-8",
+    )
+    meta_path.write_text(
+        json.dumps(
+            {
+                "program": "fvSchemes",
+                "section": "dictionary",
+                "page_name": "openfoam/fvSchemes",
+                "title": "fvSchemes",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    record = _parse_manifest_html(html_path)[0]
+    assert record["synopsis"] == "fvSchemes dictionary"

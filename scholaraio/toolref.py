@@ -850,6 +850,104 @@ def _html_to_text(text: str) -> str:
     return "\n".join(compact).strip()
 
 
+def _clean_manifest_text(text: str, title: str, program: str) -> str:
+    anchor_patterns: list[tuple[str, bool]] = []
+    if "BLAST" in title.upper():
+        anchor_patterns.append((r"BLAST[^\n]*User Manual", True))
+    anchor_patterns.extend(
+        [
+            (title, False),
+            (program, False),
+            (program.replace(".x", ""), False),
+        ]
+    )
+
+    for anchor, is_regex in anchor_patterns:
+        if not anchor:
+            continue
+        if is_regex:
+            m = re.search(anchor, text)
+            if m and m.start() > 0:
+                text = text[m.start() :]
+                break
+        elif anchor in text:
+            pos = text.find(anchor)
+            if pos > 0:
+                text = text[pos:]
+                break
+
+    stop_markers = (
+        "Search results",
+        "Found a content problem with this page?",
+        "Want to get more involved?",
+    )
+    for marker in stop_markers:
+        pos = text.find(marker)
+        if pos > 0:
+            text = text[:pos]
+
+    cleaned_lines: list[str] = []
+    skip_exact = {
+        "Top",
+        "Bookshelf",
+        "Toggle navigation",
+        "Doc",
+        "Src",
+        "Search",
+        "< PrevNext >",
+    }
+    skip_prefixes = (
+        "Copyright",
+        "Last updated:",
+        "Author(s):",
+        "This work is licensed under",
+    )
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            cleaned_lines.append("")
+            continue
+        if line in skip_exact:
+            continue
+        if any(line.startswith(prefix) for prefix in skip_prefixes):
+            continue
+        if line in {"- navigation", "- solvers", "- system", "- incompressible", "- compressible"}:
+            continue
+        line = (
+            line.replace("ð", "")
+            .replace("Â©", "©")
+            .replace("â", "")
+            .strip()
+        )
+        cleaned_lines.append(line)
+
+    compact: list[str] = []
+    blank = False
+    for line in cleaned_lines:
+        if not line:
+            if not blank:
+                compact.append("")
+            blank = True
+            continue
+        compact.append(line)
+        blank = False
+    return "\n".join(compact).strip()
+
+
+def _pick_manifest_synopsis(lines: list[str], title: str) -> str:
+    for line in lines:
+        if not line or line == title:
+            continue
+        if line.startswith("-"):
+            continue
+        if line.startswith("/*") or line.startswith("|") or line.startswith("\\"):
+            continue
+        if line in {"Overview", "Usage", "Further information", "Input requirements", "Boundary conditions"}:
+            continue
+        return line[:200]
+    return ""
+
+
 def _parse_manifest_html(filepath: Path) -> list[dict]:
     meta = json.loads(filepath.with_suffix(".json").read_text(encoding="utf-8"))
     raw_html = filepath.read_text(encoding="utf-8", errors="replace")
@@ -860,20 +958,14 @@ def _parse_manifest_html(filepath: Path) -> list[dict]:
         title_match = re.search(r"<title[^>]*>(.*?)</title>", raw_html, re.IGNORECASE | re.DOTALL)
         title = unescape(title_match.group(1)).strip() if title_match else meta["page_name"]
 
-    for anchor in (title, meta.get("program", ""), meta["page_name"].split("/")[-1]):
-        if anchor and anchor in text:
-            pos = text.find(anchor)
-            if pos > 0:
-                text = text[pos:]
-                break
+    text = _clean_manifest_text(text, title, meta.get("program", ""))
 
     lines = [line for line in text.splitlines() if line.strip()]
-    synopsis = ""
-    for line in lines:
-        if title and line == title:
-            continue
-        synopsis = line[:200]
-        break
+    synopsis = _pick_manifest_synopsis(lines, title)
+    if meta.get("section") == "dictionary" and (
+        not synopsis or synopsis in {"FoamFile"} or synopsis.startswith("/*") or synopsis.startswith("FoamFile")
+    ):
+        synopsis = f"{title} dictionary"
 
     return [
         {

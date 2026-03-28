@@ -786,64 +786,68 @@ def cmd_toolref(args: argparse.Namespace, cfg) -> None:
         toolref_use,
     )
 
-    action = args.toolref_action
+    try:
+        action = args.toolref_action
 
-    if action == "fetch":
-        count = toolref_fetch(args.tool, version=args.version, cfg=cfg)
-        if count == 0:
-            ui("未索引任何页面。请检查版本号。")
+        if action == "fetch":
+            count = toolref_fetch(args.tool, version=args.version, cfg=cfg)
+            if count == 0:
+                ui("未索引任何页面。请检查版本号或文档源。")
 
-    elif action == "show":
-        results = toolref_show(args.tool, *args.path, cfg=cfg)
-        if not results:
-            ui(f"未找到匹配：{args.tool} {' '.join(args.path)}")
-            ui(f"尝试搜索：scholaraio toolref search {args.tool} {' '.join(args.path)}")
-            return
-        for r in results:
-            ui(f"\n{'=' * 60}")
-            ui(f"📖 {r['page_name']}")
-            if r.get("section"):
-                ui(f"   Namelist: {r['section']}  |  Program: {r.get('program', '')}")
-            if r.get("synopsis"):
-                ui(f"   {r['synopsis']}")
-            ui(f"{'─' * 60}")
-            ui(r.get("content", "(无内容)"))
+        elif action == "show":
+            results = toolref_show(args.tool, *args.path, cfg=cfg)
+            if not results:
+                ui(f"未找到匹配：{args.tool} {' '.join(args.path)}")
+                ui(f"尝试搜索：scholaraio toolref search {args.tool} {' '.join(args.path)}")
+                return
+            for r in results:
+                ui(f"\n{'=' * 60}")
+                ui(f"📖 {r['page_name']}")
+                if r.get("section"):
+                    ui(f"   Namelist: {r['section']}  |  Program: {r.get('program', '')}")
+                if r.get("synopsis"):
+                    ui(f"   {r['synopsis']}")
+                ui(f"{'─' * 60}")
+                ui(r.get("content", "(无内容)"))
 
-    elif action == "search":
-        query = " ".join(args.query)
-        results = toolref_search(
-            args.tool,
-            query,
-            top_k=args.top,
-            program=args.program,
-            section=args.section,
-            cfg=cfg,
-        )
-        if not results:
-            ui(f"无结果：{query}")
-            return
-        ui(f"找到 {len(results)} 条结果：\n")
-        for i, r in enumerate(results, 1):
-            synopsis = r.get("synopsis", "")[:80]
-            ui(f"  {i:2d}. [{r['page_name']}] {synopsis}")
+        elif action == "search":
+            query = " ".join(args.query)
+            results = toolref_search(
+                args.tool,
+                query,
+                top_k=args.top,
+                program=args.program,
+                section=args.section,
+                cfg=cfg,
+            )
+            if not results:
+                ui(f"无结果：{query}")
+                return
+            ui(f"找到 {len(results)} 条结果：\n")
+            for i, r in enumerate(results, 1):
+                synopsis = r.get("synopsis", "")[:80]
+                ui(f"  {i:2d}. [{r['page_name']}] {synopsis}")
 
-    elif action == "list":
-        entries = toolref_list(args.tool, cfg=cfg)
-        if not entries:
-            tools = ", ".join(TOOL_REGISTRY.keys())
-            ui(f"无已拉取文档。支持的工具：{tools}")
-            ui("使用 `scholaraio toolref fetch <tool> --version <ver>` 拉取")
-            return
-        current_tool = ""
-        for e in entries:
-            if e["tool"] != current_tool:
-                current_tool = e["tool"]
-                ui(f"\n{e['display_name']}:")
-            marker = " (current)" if e["is_current"] else ""
-            ui(f"  {e['version']}{marker} — {e['page_count']} 页")
+        elif action == "list":
+            entries = toolref_list(args.tool, cfg=cfg)
+            if not entries:
+                tools = ", ".join(TOOL_REGISTRY.keys())
+                ui(f"无已拉取文档。支持的工具：{tools}")
+                ui("使用 `scholaraio toolref fetch <tool> --version <ver>` 拉取")
+                return
+            current_tool = ""
+            for e in entries:
+                if e["tool"] != current_tool:
+                    current_tool = e["tool"]
+                    ui(f"\n{e['display_name']}:")
+                marker = " (current)" if e["is_current"] else ""
+                ui(f"  {e['version']}{marker} — {e['page_count']} 页")
 
-    elif action == "use":
-        toolref_use(args.tool, args.version, cfg=cfg)
+        elif action == "use":
+            toolref_use(args.tool, args.version, cfg=cfg)
+    except (FileNotFoundError, ValueError, RuntimeError) as e:
+        _log.error("%s", e)
+        sys.exit(1)
 
 
 def cmd_translate(args: argparse.Namespace, cfg) -> None:
