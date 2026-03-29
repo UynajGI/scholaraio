@@ -282,6 +282,17 @@ def main() -> None:
     p_fix.add_argument("--no-api", action="store_true", help="Skip API queries")
 
     args = parser.parse_args()
+
+    # Ensure S2 API key is configured for standalone CLI usage
+    # (the main scholaraio CLI does this in cli.py; this covers
+    # `python -m scholaraio.ingest.metadata` invocations.)
+    from scholaraio.config import load_config
+
+    from ._models import configure_s2_session
+
+    _cfg = load_config()
+    configure_s2_session(_cfg.resolved_s2_api_key())
+
     if args.command == "show":
         cmd_show(args)
     elif args.command == "extract":
