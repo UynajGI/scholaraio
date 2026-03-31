@@ -8,6 +8,9 @@ from scholaraio.config import _build_config
 
 
 def test_load_model_sets_hf_endpoint_before_sentence_transformers_import(tmp_path, monkeypatch):
+    monkeypatch.delenv("SCHOLARAIO_HF_ENDPOINT", raising=False)
+    monkeypatch.delenv("HF_ENDPOINT", raising=False)
+
     cfg = _build_config(
         {
             "embed": {
@@ -32,7 +35,6 @@ def test_load_model_sets_hf_endpoint_before_sentence_transformers_import(tmp_pat
         seen["hf_endpoint_at_import"] = os.environ.get("HF_ENDPOINT")
         return SimpleNamespace(SentenceTransformer=FakeSentenceTransformer)
 
-    monkeypatch.delenv("HF_ENDPOINT", raising=False)
     monkeypatch.setattr(vectors.importlib, "import_module", fake_import_module)
     monkeypatch.setattr(vectors, "_resolve_model_path", lambda *args: None)
     vectors._model_cache.clear()

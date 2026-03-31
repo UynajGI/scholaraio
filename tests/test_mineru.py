@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from scholaraio.ingest.mineru import ConvertOptions, ConvertResult, _convert_long_pdf_cloud
+from scholaraio.ingest.mineru import (
+    ConvertOptions,
+    ConvertResult,
+    _convert_long_pdf_cloud,
+    _resolve_cloud_model_version,
+)
 
 
 def test_convert_long_pdf_cloud_preserves_cloud_model_version(tmp_path, monkeypatch):
@@ -55,3 +60,13 @@ def test_convert_long_pdf_cloud_preserves_cloud_model_version(tmp_path, monkeypa
 
     assert result.success is True
     assert captured["cloud_model_version"] == "MinerU-HTML"
+
+
+def test_resolve_cloud_model_version_falls_back_to_backend_when_unset():
+    opts = ConvertOptions(backend="vlm-auto-engine", cloud_model_version="")
+    assert _resolve_cloud_model_version(opts) == "vlm"
+
+
+def test_resolve_cloud_model_version_uses_backend_mapping_by_default():
+    opts = ConvertOptions(backend="vlm-auto-engine")
+    assert _resolve_cloud_model_version(opts) == "vlm"

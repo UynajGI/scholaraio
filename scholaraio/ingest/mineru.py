@@ -148,6 +148,7 @@ class ConvertOptions:
         output_dir: 输出目录，为 ``None`` 时与 PDF 同目录。
         backend: MinerU 解析后端（``pipeline`` | ``vlm-auto-engine`` 等）。
         cloud_model_version: MinerU 云 API ``model_version``（``pipeline`` | ``vlm`` | ``MinerU-HTML``）。
+            留空时根据 ``backend`` 做兼容映射。
         lang: OCR 语言（``ch`` | ``en`` | ``latin`` 等）。
         parse_method: 解析方式（``auto`` | ``txt`` | ``ocr``）。
         formula_enable: 是否启用公式解析。
@@ -162,7 +163,7 @@ class ConvertOptions:
     api_url: str = DEFAULT_API_URL
     output_dir: Path | None = None
     backend: str = DEFAULT_BACKEND
-    cloud_model_version: str = "pipeline"
+    cloud_model_version: str = ""
     lang: str = DEFAULT_LANG
     parse_method: str = "auto"
     formula_enable: bool = True

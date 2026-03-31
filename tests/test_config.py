@@ -89,6 +89,17 @@ class TestBuildConfig:
         cfg = _build_config(data, tmp_path)
         assert cfg.zotero.library_id == "12345"
 
+    def test_mineru_formula_and_table_null_use_defaults(self, tmp_path):
+        data = {
+            "ingest": {
+                "mineru_enable_formula": None,
+                "mineru_enable_table": None,
+            }
+        }
+        cfg = _build_config(data, tmp_path)
+        assert cfg.ingest.mineru_enable_formula is True
+        assert cfg.ingest.mineru_enable_table is True
+
     def test_embed_env_vars_override_yaml(self, tmp_path, monkeypatch):
         data = {
             "embed": {

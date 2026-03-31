@@ -444,6 +444,21 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return result
 
 
+def _bool_or_default(value: object, default: bool) -> bool:
+    """Return ``default`` for ``None``; otherwise coerce common bool-like values."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in {"true", "1", "yes", "on"}:
+            return True
+        if text in {"false", "0", "no", "off"}:
+            return False
+    return bool(value)
+
+
 def _build_config(data: dict, root: Path) -> Config:
     """Build Config dataclass from raw dict."""
     paths_data = data.get("paths", {}) or {}
@@ -475,8 +490,8 @@ def _build_config(data: dict, root: Path) -> Config:
         mineru_model_version_cloud=ingest_data.get("mineru_model_version_cloud", "pipeline"),
         mineru_lang=ingest_data.get("mineru_lang", "ch"),
         mineru_parse_method=ingest_data.get("mineru_parse_method", "auto"),
-        mineru_enable_formula=bool(ingest_data.get("mineru_enable_formula", True)),
-        mineru_enable_table=bool(ingest_data.get("mineru_enable_table", True)),
+        mineru_enable_formula=_bool_or_default(ingest_data.get("mineru_enable_formula"), True),
+        mineru_enable_table=_bool_or_default(ingest_data.get("mineru_enable_table"), True),
         abstract_llm_mode=ingest_data.get("abstract_llm_mode", "verify"),
         contact_email=ingest_data.get("contact_email") or "",
         s2_api_key=ingest_data.get("s2_api_key") or "",
