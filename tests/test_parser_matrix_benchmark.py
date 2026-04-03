@@ -129,3 +129,20 @@ def test_run_mineru_cloud_threads_cloud_model_version(tmp_path, monkeypatch):
 
     assert result["ok"] is True
     assert captured["cloud_model_version"] == "vlm"
+
+
+def test_run_one_accepts_hyphenated_mineru_cloud_name(tmp_path, monkeypatch):
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n")
+    out_dir = tmp_path / "out"
+
+    monkeypatch.setattr(
+        bench,
+        "_run_mineru_cloud",
+        lambda pdf_path, md_path, raw_dir, cfg: {"ok": True, "error": None, "command": "cloud"},
+    )
+
+    result = bench.run_one(pdf, bench.RunConfig(parser="mineru-cloud"), out_dir)
+
+    assert result["ok"] is True
+    assert result["error"] is None

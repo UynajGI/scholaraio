@@ -584,7 +584,7 @@ def _build_config(data: dict, root: Path) -> Config:
             field_name="ingest.pdf_preferred_parser",
         ),
         pdf_fallback_order=_coerce_str_list(ingest_data.get("pdf_fallback_order"), default=["auto"]),
-        pdf_fallback_auto_detect=_coerce_bool(ingest_data.get("pdf_fallback_auto_detect", True)),
+        pdf_fallback_auto_detect=_bool_or_default(ingest_data.get("pdf_fallback_auto_detect"), True),
     )
 
     embed_data = data.get("embed", {}) or {}

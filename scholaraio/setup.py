@@ -663,7 +663,14 @@ def _wizard_keys(root: Path, lang: Lang, parser_choice: ParserChoice | None = No
         local_data = yaml.safe_load(local_path.read_text(encoding="utf-8")) or {}
 
     changed = False
-    ingest_local = local_data.setdefault("ingest", {})
+    ingest_local_raw = local_data.get("ingest")
+    if not isinstance(ingest_local_raw, dict):
+        ingest_local: dict[str, object] = {}
+        local_data["ingest"] = ingest_local
+        if ingest_local_raw is not None:
+            changed = True
+    else:
+        ingest_local = ingest_local_raw
 
     if parser_choice is not None and ingest_local.get("pdf_preferred_parser") != parser_choice.parser:
         ingest_local["pdf_preferred_parser"] = parser_choice.parser

@@ -104,6 +104,10 @@ class TestBuildConfig:
         cfg = _build_config({"ingest": {"pdf_fallback_auto_detect": "false"}}, tmp_path)
         assert cfg.ingest.pdf_fallback_auto_detect is False
 
+    def test_ingest_fallback_auto_detect_none_uses_default(self, tmp_path):
+        cfg = _build_config({"ingest": {"pdf_fallback_auto_detect": None}}, tmp_path)
+        assert cfg.ingest.pdf_fallback_auto_detect is True
+
     def test_null_sections_handled(self, tmp_path):
         data = {"llm": None, "paths": None}
         cfg = _build_config(data, tmp_path)

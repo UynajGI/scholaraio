@@ -2551,7 +2551,7 @@ def cmd_attach_pdf(args: argparse.Namespace, cfg) -> None:
             ui(f"fallback 解析失败: {fallback_err}")
             sys.exit(1)
         ui(f"已降级使用 {parser_name} 生成 paper.md")
-    else:
+    elif result is not None:
         # Move/rename output to paper.md
         if result.md_path and result.md_path != existing_md:
             if existing_md.exists():

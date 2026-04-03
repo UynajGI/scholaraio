@@ -60,6 +60,11 @@ def make_output_dir(root: Path, index: int, cfg: RunConfig) -> Path:
     return root / f"{index:02d}__{make_run_slug(cfg)}"
 
 
+def normalize_parser_name(parser: str) -> str:
+    """Normalize parser names so hyphenated and underscored spellings both work."""
+    return str(parser).strip().lower().replace("-", "_")
+
+
 def expand_run_configs(spec: dict[str, Any]) -> list[RunConfig]:
     """Expand one parser spec into one or more concrete run configs."""
     parser = str(spec["parser"])
@@ -163,17 +168,18 @@ def run_one(pdf_path: Path, cfg: RunConfig, out_dir: Path) -> dict[str, Any]:
     }
 
     try:
-        if cfg.parser == "pymupdf":
+        parser_name = normalize_parser_name(cfg.parser)
+        if parser_name == "pymupdf":
             ok, err = _run_pymupdf(pdf_path, md_path)
             entry["ok"] = ok
             entry["error"] = err
-        elif cfg.parser == "mineru_cloud":
+        elif parser_name == "mineru_cloud":
             res = _run_mineru_cloud(pdf_path, md_path, raw_dir, cfg)
             entry.update(res)
-        elif cfg.parser == "mineru_local":
+        elif parser_name == "mineru_local":
             res = _run_mineru_local(pdf_path, md_path, raw_dir, cfg)
             entry.update(res)
-        elif cfg.parser == "docling":
+        elif parser_name == "docling":
             res = _run_cli_parser(pdf_path, md_path, raw_dir, logs_dir, cfg)
             entry.update(res)
         else:
