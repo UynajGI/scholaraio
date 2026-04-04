@@ -115,6 +115,11 @@ def _mock_response(xml_text: str, status_code: int = 200) -> MagicMock:
 
 
 class TestSearchArxivParsing:
+    def test_session_respects_env_proxies(self):
+        from scholaraio.sources import arxiv
+
+        assert arxiv._SESSION.trust_env is True
+
     def test_module_import_does_not_require_bs4(self, monkeypatch):
         real_import = builtins.__import__
         sys.modules.pop("scholaraio.sources.arxiv", None)

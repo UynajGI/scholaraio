@@ -469,6 +469,17 @@ def step_dedup(ctx: InboxCtx) -> StepResult:
     if doi and doi.strip().lower() in ("null", "none", "n/a"):
         ctx.meta.doi = ""
         doi = ""
+    arxiv_key = _normalize_arxiv_id(ctx.meta.arxiv_id)
+    if arxiv_key and ctx.existing_arxiv_ids and arxiv_key in ctx.existing_arxiv_ids:
+        existing_json = ctx.existing_arxiv_ids[arxiv_key]
+        _move_to_pending(
+            ctx,
+            issue="duplicate",
+            message="arXiv 预印本与已入库论文重复",
+            extra={"duplicate_of": existing_json.parent.name, "arxiv_id": arxiv_key},
+        )
+        ctx.status = "duplicate"
+        return StepResult.FAIL
     if not doi or not doi.strip():
         # No DOI -> check if patent (by publication number or detection)
         if _detect_patent(ctx):
@@ -509,17 +520,6 @@ def step_dedup(ctx: InboxCtx) -> StepResult:
             return StepResult.OK
         # No DOI -> check arXiv preprint (has arXiv ID from extraction or API)
         if ctx.meta.arxiv_id:
-            arxiv_key = _normalize_arxiv_id(ctx.meta.arxiv_id)
-            if arxiv_key and ctx.existing_arxiv_ids and arxiv_key in ctx.existing_arxiv_ids:
-                existing_json = ctx.existing_arxiv_ids[arxiv_key]
-                _move_to_pending(
-                    ctx,
-                    issue="duplicate",
-                    message="arXiv 预印本与已入库论文重复",
-                    extra={"duplicate_of": existing_json.parent.name, "arxiv_id": arxiv_key},
-                )
-                ctx.status = "duplicate"
-                return StepResult.FAIL
             if not ctx.meta.paper_type:
                 ctx.meta.paper_type = "preprint"
             ui(f"检测为 arXiv 预印本（{ctx.meta.arxiv_id}），无 DOI 直接入库")

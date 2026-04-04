@@ -140,6 +140,59 @@ def test_step_dedup_rejects_duplicate_arxiv_only_preprint(tmp_path: Path, monkey
     }
 
 
+def test_step_dedup_rejects_duplicate_when_existing_preprint_has_only_arxiv_id_but_new_record_gets_doi(
+    tmp_path: Path, monkeypatch
+):
+    existing_json = tmp_path / "papers" / "Imamura-1999-String-Junctions" / "meta.json"
+    existing_json.parent.mkdir(parents=True)
+    existing_json.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr("scholaraio.ingest.pipeline._detect_patent", lambda ctx: False)
+    monkeypatch.setattr("scholaraio.ingest.pipeline._detect_thesis", lambda ctx: False)
+    monkeypatch.setattr("scholaraio.ingest.pipeline._detect_book", lambda ctx: False)
+
+    def fake_enrich(meta):
+        meta.doi = "10.1000/test-preprint"
+        return meta
+
+    monkeypatch.setattr("scholaraio.ingest.metadata.enrich_metadata", fake_enrich)
+
+    moved: dict[str, object] = {}
+
+    def fake_move_to_pending(ctx, *, issue="no_doi", message="", extra=None):
+        moved["issue"] = issue
+        moved["extra"] = extra or {}
+
+    monkeypatch.setattr("scholaraio.ingest.pipeline._move_to_pending", fake_move_to_pending)
+
+    ctx = InboxCtx(
+        pdf_path=None,
+        inbox_dir=tmp_path / "inbox",
+        papers_dir=tmp_path / "papers",
+        existing_dois={},
+        existing_pub_nums={},
+        cfg=SimpleNamespace(_root=tmp_path),
+        opts={"no_api": False, "dry_run": False},
+        pending_dir=tmp_path / "pending",
+        md_path=None,
+        meta=PaperMetadata(
+            title="String Junctions and Their Duals in Heterotic String Theory",
+            arxiv_id="hep-th/9901001v2",
+        ),
+    )
+    ctx.existing_arxiv_ids = {"hep-th/9901001": existing_json}
+
+    result = step_dedup(ctx)
+
+    assert result == StepResult.FAIL
+    assert ctx.status == "duplicate"
+    assert moved["issue"] == "duplicate"
+    assert moved["extra"] == {
+        "duplicate_of": "Imamura-1999-String-Junctions",
+        "arxiv_id": "hep-th/9901001",
+    }
+
+
 def test_step_office_convert_reports_scholaraio_office_extra(tmp_path: Path, monkeypatch):
     office_path = tmp_path / "report.docx"
     office_path.write_text("dummy", encoding="utf-8")

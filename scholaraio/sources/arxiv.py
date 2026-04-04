@@ -35,7 +35,6 @@ _NS = {
 
 _SESSION = requests.Session()
 _SESSION.headers.update({"User-Agent": _user_agent()})
-_SESSION.trust_env = False
 _retry = requests.adapters.HTTPAdapter(
     max_retries=Retry(
         total=2,
