@@ -5,6 +5,8 @@ from pathlib import Path
 
 from scholaraio.ingest.proceedings import (
     apply_proceedings_split_plan,
+    apply_proceedings_clean_plan,
+    build_proceedings_clean_candidates,
     detect_proceedings_from_md,
     ingest_proceedings_markdown,
     looks_like_proceedings_text,
@@ -249,6 +251,92 @@ def test_apply_proceedings_split_plan_skips_affiliation_lines_before_abstract(tm
     assert meta["abstract"] == "This paper studies snow settling in atmospheric turbulence."
 
 
+def test_apply_proceedings_split_plan_skips_comment_label_and_case_variant_heading(tmp_path: Path):
+    proceedings_root = tmp_path / "data" / "proceedings"
+    proceedings_root.mkdir(parents=True)
+    md_path = tmp_path / "volume.md"
+    md_path.write_text(
+        "# Proceedings of the IUTAM Symposium on Granular Flow\n\n"
+        "# CAN DYNAMICAL SYSTEMS APPROACH TURBULENCE?\n"
+        "Comment 2.\n"
+        "Philip Holmes\n"
+        "Abstract. This paper reviews dynamical systems ideas for turbulence.\n",
+        encoding="utf-8",
+    )
+
+    proceeding_dir = ingest_proceedings_markdown(proceedings_root, md_path, source_name="volume.pdf")
+    apply_proceedings_split_plan(
+        proceeding_dir,
+        {
+            "volume_title": "Proceedings of the IUTAM Symposium on Granular Flow",
+            "papers": [{"title": "Can Dynamical Systems Approach Turbulence?", "start_line": 3, "end_line": 6}],
+        },
+    )
+
+    paper_dir = next((proceeding_dir / "papers").iterdir())
+    meta = json.loads((paper_dir / "meta.json").read_text(encoding="utf-8"))
+
+    assert meta["authors"] == ["Philip Holmes"]
+    assert meta["abstract"] == "This paper reviews dynamical systems ideas for turbulence."
+
+
+def test_apply_proceedings_split_plan_tolerates_minor_heading_spacing_noise(tmp_path: Path):
+    proceedings_root = tmp_path / "data" / "proceedings"
+    proceedings_root.mkdir(parents=True)
+    md_path = tmp_path / "volume.md"
+    md_path.write_text(
+        "# Proceedings of the IUTAM Symposium on Granular Flow\n\n"
+        "# CAN DYNAMICAL SYSTEMSAPPROACH TURBULENCE?\n"
+        "Philip Holmes\n"
+        "Abstract. This paper reviews dynamical systems ideas for turbulence.\n",
+        encoding="utf-8",
+    )
+
+    proceeding_dir = ingest_proceedings_markdown(proceedings_root, md_path, source_name="volume.pdf")
+    apply_proceedings_split_plan(
+        proceeding_dir,
+        {
+            "volume_title": "Proceedings of the IUTAM Symposium on Granular Flow",
+            "papers": [{"title": "Can Dynamical Systems Approach Turbulence?", "start_line": 3, "end_line": 5}],
+        },
+    )
+
+    paper_dir = next((proceeding_dir / "papers").iterdir())
+    meta = json.loads((paper_dir / "meta.json").read_text(encoding="utf-8"))
+
+    assert meta["authors"] == ["Philip Holmes"]
+
+
+def test_apply_proceedings_split_plan_skips_comment_label_variant_and_heading_abstract(tmp_path: Path):
+    proceedings_root = tmp_path / "data" / "proceedings"
+    proceedings_root.mkdir(parents=True)
+    md_path = tmp_path / "volume.md"
+    md_path.write_text(
+        "# Proceedings of the IUTAM Symposium on Granular Flow\n\n"
+        "# Cellular Automata and Massively Parallel Physics\n"
+        "Comment 2. +\n"
+        "C.E.Leith\n"
+        "# Abstract\n"
+        "This paper discusses cellular automata for turbulence simulations.\n",
+        encoding="utf-8",
+    )
+
+    proceeding_dir = ingest_proceedings_markdown(proceedings_root, md_path, source_name="volume.pdf")
+    apply_proceedings_split_plan(
+        proceeding_dir,
+        {
+            "volume_title": "Proceedings of the IUTAM Symposium on Granular Flow",
+            "papers": [{"title": "Cellular Automata and Massively Parallel Physics", "start_line": 3, "end_line": 7}],
+        },
+    )
+
+    paper_dir = next((proceeding_dir / "papers").iterdir())
+    meta = json.loads((paper_dir / "meta.json").read_text(encoding="utf-8"))
+
+    assert meta["authors"] == ["C.E.Leith"]
+    assert meta["abstract"] == "This paper discusses cellular automata for turbulence simulations."
+
+
 def test_ingest_proceedings_markdown_prepares_realistic_contents_style_volume(tmp_path: Path):
     proceedings_root = tmp_path / "data" / "proceedings"
     proceedings_root.mkdir(parents=True)
@@ -452,3 +540,143 @@ def test_cli_proceedings_apply_split_applies_plan_and_reports_success(tmp_path: 
     assert meta["child_paper_count"] == 1
     assert len(child_dirs) == 1
     assert "已应用 proceedings split plan" in joined
+
+
+def test_build_proceedings_clean_candidates_flags_structural_issues(tmp_path: Path):
+    proceedings_root = tmp_path / "data" / "proceedings"
+    proceedings_root.mkdir(parents=True, exist_ok=True)
+    md_path = tmp_path / "volume.md"
+    md_path.write_text(
+        "# Proceedings of the IUTAM Symposium on Granular Flow\n\n"
+        "# Discussion of Large Eddy Simulation\n"
+        "Reporter Laurence Keefe\n"
+        "Question and answer transcript.\n\n"
+        "# Wave propagation in porous media\n"
+        "Alice Zheng\n"
+        "Abstract. Granular damping in porous waves.\n",
+        encoding="utf-8",
+    )
+    proceeding_dir = ingest_proceedings_markdown(proceedings_root, md_path, source_name="volume.pdf")
+    apply_proceedings_split_plan(
+        proceeding_dir,
+        {
+            "volume_title": "Proceedings of the IUTAM Symposium on Granular Flow",
+            "papers": [
+                {"title": "Discussion of Large Eddy Simulation", "start_line": 3, "end_line": 5},
+                {"title": "Wave propagation in porous media", "start_line": 6, "end_line": 8},
+            ],
+        },
+    )
+
+    candidates_path = build_proceedings_clean_candidates(proceeding_dir)
+    candidates = json.loads(candidates_path.read_text(encoding="utf-8"))
+    discussion = next(item for item in candidates["papers"] if item["title"] == "Discussion of Large Eddy Simulation")
+    regular = next(item for item in candidates["papers"] if item["title"] == "Wave propagation in porous media")
+
+    assert "discussion_title" in discussion["signals"]
+    assert "missing_abstract" in discussion["signals"]
+    assert "missing_authors" not in regular["signals"]
+    assert regular["paper_type"] == "conference-paper"
+
+
+def test_apply_proceedings_clean_plan_renames_drops_and_reclassifies(tmp_path: Path):
+    proceedings_root = tmp_path / "data" / "proceedings"
+    proceedings_root.mkdir(parents=True, exist_ok=True)
+    md_path = tmp_path / "volume.md"
+    md_path.write_text(
+        "# Proceedings of the IUTAM Symposium on Granular Flow\n\n"
+        "# Discussion of Large Eddy Simulation\n"
+        "Reporter Laurence Keefe\n"
+        "Question and answer transcript.\n\n"
+        "# Wave propagation in porous media\n"
+        "Alice Zheng\n"
+        "Abstract. Granular damping in porous waves.\n",
+        encoding="utf-8",
+    )
+    proceeding_dir = ingest_proceedings_markdown(proceedings_root, md_path, source_name="volume.pdf")
+    apply_proceedings_split_plan(
+        proceeding_dir,
+        {
+            "volume_title": "Proceedings of the IUTAM Symposium on Granular Flow",
+            "papers": [
+                {"title": "Discussion of Large Eddy Simulation", "start_line": 3, "end_line": 5},
+                {"title": "Wave propagation in porous media", "start_line": 6, "end_line": 8},
+            ],
+        },
+    )
+
+    apply_proceedings_clean_plan(
+        proceeding_dir,
+        {
+            "volume_title": "Granular Flow Workshop",
+            "papers": [
+                {"paper": "Discussion of Large Eddy Simulation", "action": "drop"},
+                {
+                    "paper": "wave propagation in porous media",
+                    "action": "rename",
+                    "title": "Wave Propagation in Porous Media (Position Paper)",
+                    "paper_type": "position-paper",
+                },
+            ],
+        },
+    )
+
+    meta = json.loads((proceeding_dir / "meta.json").read_text(encoding="utf-8"))
+    child_dirs = sorted((proceeding_dir / "papers").iterdir())
+    child_meta = json.loads((child_dirs[0] / "meta.json").read_text(encoding="utf-8"))
+
+    assert meta["title"] == "Granular Flow Workshop"
+    assert meta["child_paper_count"] == 1
+    assert child_meta["title"] == "Wave Propagation in Porous Media (Position Paper)"
+    assert child_meta["paper_type"] == "position-paper"
+    assert child_dirs[0].name == "Wave-Propagation-in-Porous-Media-Position-Paper"
+
+
+def test_cli_proceedings_clean_commands_build_and_apply(tmp_path: Path, monkeypatch):
+    cfg = _build_config({"ingest": {"extractor": "regex"}}, tmp_path)
+    cfg.ensure_dirs()
+    proceedings_root = tmp_path / "data" / "proceedings"
+    proceedings_root.mkdir(parents=True, exist_ok=True)
+    md_path = tmp_path / "volume.md"
+    md_path.write_text(
+        "# Proceedings of the IUTAM Symposium on Granular Flow\n\n"
+        "# Discussion of Large Eddy Simulation\n"
+        "Reporter Laurence Keefe\n"
+        "Question and answer transcript.\n",
+        encoding="utf-8",
+    )
+    proceeding_dir = ingest_proceedings_markdown(proceedings_root, md_path, source_name="volume.pdf")
+    apply_proceedings_split_plan(
+        proceeding_dir,
+        {
+            "volume_title": "Proceedings of the IUTAM Symposium on Granular Flow",
+            "papers": [{"title": "Discussion of Large Eddy Simulation", "start_line": 3, "end_line": 5}],
+        },
+    )
+
+    parser = cli._build_parser()
+    messages: list[str] = []
+    monkeypatch.setattr(cli, "ui", lambda message="": messages.append(message))
+
+    args = parser.parse_args(["proceedings", "build-clean-candidates", str(proceeding_dir)])
+    args.func(args, cfg)
+    candidates_path = proceeding_dir / "clean_candidates.json"
+    assert candidates_path.exists()
+
+    clean_plan_path = tmp_path / "clean_plan.json"
+    clean_plan_path.write_text(
+        json.dumps(
+            {"papers": [{"paper": "discussion of large eddy simulation", "action": "drop"}]},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    args = parser.parse_args(["proceedings", "apply-clean", str(proceeding_dir), str(clean_plan_path)])
+    args.func(args, cfg)
+
+    joined = "\n".join(messages)
+    meta = json.loads((proceeding_dir / "meta.json").read_text(encoding="utf-8"))
+
+    assert "已生成 proceedings clean candidates" in joined
+    assert "已应用 proceedings clean plan" in joined
+    assert meta["child_paper_count"] == 0

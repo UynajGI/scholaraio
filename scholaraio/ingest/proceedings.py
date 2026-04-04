@@ -65,6 +65,12 @@ def _normalize_title_key(text: str) -> str:
     return lowered
 
 
+def _normalize_title_match_key(text: str) -> str:
+    lowered = text.casefold()
+    lowered = re.sub(r"[^\w\u4e00-\u9fff]+", "", lowered, flags=re.UNICODE)
+    return lowered
+
+
 def _extract_volume_title(text: str, fallback: str) -> str:
     for match in _TOP_LEVEL_HEADING_RE.finditer(text):
         heading = match.group(1).strip()
@@ -79,9 +85,11 @@ def _extract_volume_title(text: str, fallback: str) -> str:
 
 def _extract_authors_and_abstract(chunk: str, title: str) -> tuple[list[str], str]:
     body = chunk.strip()
-    if body.startswith(f"# {title}"):
-        body = body[len(f"# {title}") :].lstrip()
     lines = [line.strip() for line in body.splitlines()]
+    if lines and lines[0].startswith("#"):
+        first_heading = lines[0].lstrip("#").strip()
+        if _normalize_title_match_key(first_heading.rstrip(".?")) == _normalize_title_match_key(title.rstrip(".?")):
+            lines = lines[1:]
 
     author_lines: list[str] = []
     abstract_lines: list[str] = []
@@ -93,11 +101,14 @@ def _extract_authors_and_abstract(chunk: str, title: str) -> tuple[list[str], st
             if section == "authors" and author_lines:
                 section = "affiliations"
             continue
+        normalized_line = line.lstrip("#").strip()
+        if normalized_line.lower().startswith("abstract"):
+            section = "abstract"
+            abstract_lines.append(re.sub(r"^#?\s*Abstract\.?\s*", "", line, flags=re.IGNORECASE).strip())
+            continue
         if line.startswith("#"):
             break
-        if line.lower().startswith("abstract"):
-            section = "abstract"
-            abstract_lines.append(re.sub(r"^Abstract\.?\s*", "", line, flags=re.IGNORECASE).strip())
+        if section == "authors" and line.casefold().startswith("comment"):
             continue
         if section == "abstract":
             if line.lower().startswith("keywords"):
@@ -221,6 +232,143 @@ def _papers_from_split_plan(text: str, plan: dict) -> list[dict]:
             }
         )
     return papers
+
+
+def _paper_headings(markdown: str) -> list[str]:
+    return [match.group(2).strip() for match in _HEADING_RE.finditer(markdown)]
+
+
+def _paper_opening_lines(markdown: str, n: int = 8) -> list[str]:
+    return [line.strip() for line in markdown.splitlines() if line.strip()][:n]
+
+
+def _paper_closing_lines(markdown: str, n: int = 6) -> list[str]:
+    lines = [line.strip() for line in markdown.splitlines() if line.strip()]
+    return lines[-n:]
+
+
+def _candidate_signals(title: str, markdown: str, meta: dict) -> list[str]:
+    lowered_title = title.casefold()
+    opening = _paper_opening_lines(markdown, n=12)
+    signals: list[str] = []
+    if not meta.get("authors"):
+        signals.append("missing_authors")
+    if not meta.get("abstract"):
+        signals.append("missing_abstract")
+    if not meta.get("doi"):
+        signals.append("missing_doi")
+    if lowered_title.startswith("discussion of"):
+        signals.append("discussion_title")
+    if any(line.casefold().startswith("comment") for line in opening[1:4]):
+        signals.append("comment_label")
+    if any("reporter" in line.casefold() for line in opening[:5]):
+        signals.append("reporter_line")
+    if any(re.match(r"^\d+[\.\)]", line) for line in opening[:3]):
+        signals.append("starts_with_numbered_section")
+    return signals
+
+
+def build_proceedings_clean_candidates(proceeding_dir: Path) -> Path:
+    papers_dir = proceeding_dir / "papers"
+    if not papers_dir.exists():
+        raise FileNotFoundError(f"papers directory not found: {papers_dir}")
+
+    meta_path = proceeding_dir / "meta.json"
+    proceeding_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    candidates: list[dict] = []
+    for paper_dir in sorted(path for path in papers_dir.iterdir() if path.is_dir()):
+        paper_meta = json.loads((paper_dir / "meta.json").read_text(encoding="utf-8"))
+        markdown = (paper_dir / "paper.md").read_text(encoding="utf-8", errors="replace")
+        candidates.append(
+            {
+                "paper_dir": paper_dir.name,
+                "title": paper_meta.get("title", paper_dir.name),
+                "normalized_title": _normalize_title_key(paper_meta.get("title", paper_dir.name)),
+                "paper_type": paper_meta.get("paper_type", "conference-paper"),
+                "authors": paper_meta.get("authors", []),
+                "abstract_present": bool((paper_meta.get("abstract") or "").strip()),
+                "doi_present": bool((paper_meta.get("doi") or "").strip()),
+                "signals": _candidate_signals(paper_meta.get("title", paper_dir.name), markdown, paper_meta),
+                "opening_lines": _paper_opening_lines(markdown),
+                "closing_lines": _paper_closing_lines(markdown),
+                "headings": _paper_headings(markdown)[:12],
+            }
+        )
+
+    payload = {
+        "volume_title": proceeding_meta.get("title", proceeding_dir.name),
+        "proceeding_dir": proceeding_dir.name,
+        "paper_count": len(candidates),
+        "papers": candidates,
+    }
+    out_path = proceeding_dir / "clean_candidates.json"
+    out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return out_path
+
+
+def _match_clean_entry(candidates: dict[str, Path], entry: dict) -> Path | None:
+    raw = str(entry.get("paper", "")).strip()
+    key = _normalize_title_key(raw)
+    match_key = _normalize_title_match_key(raw)
+    if not key:
+        return None
+    return candidates.get(key) or candidates.get(match_key)
+
+
+def apply_proceedings_clean_plan(proceeding_dir: Path, clean_plan: dict | Path) -> Path:
+    if isinstance(clean_plan, Path):
+        plan = _parse_json(clean_plan.read_text(encoding="utf-8"))
+    else:
+        plan = clean_plan
+
+    papers_dir = proceeding_dir / "papers"
+    if not papers_dir.exists():
+        raise FileNotFoundError(f"papers directory not found: {papers_dir}")
+
+    candidate_map: dict[str, Path] = {}
+    for paper_dir in sorted(path for path in papers_dir.iterdir() if path.is_dir()):
+        paper_meta = json.loads((paper_dir / "meta.json").read_text(encoding="utf-8"))
+        candidate_map[_normalize_title_key(paper_meta.get("title", paper_dir.name))] = paper_dir
+        candidate_map[_normalize_title_match_key(paper_meta.get("title", paper_dir.name))] = paper_dir
+        candidate_map[_normalize_title_key(paper_dir.name)] = paper_dir
+        candidate_map[_normalize_title_match_key(paper_dir.name)] = paper_dir
+
+    for entry in plan.get("papers", []):
+        paper_dir = _match_clean_entry(candidate_map, entry)
+        if paper_dir is None or not paper_dir.exists():
+            continue
+
+        action = str(entry.get("action", "keep")).strip().lower()
+        if action == "drop":
+            shutil.rmtree(paper_dir)
+            continue
+
+        meta_path = paper_dir / "meta.json"
+        paper_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        if entry.get("title"):
+            paper_meta["title"] = str(entry["title"]).strip()
+        if entry.get("paper_type"):
+            paper_meta["paper_type"] = str(entry["paper_type"]).strip()
+        meta_path.write_text(json.dumps(paper_meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        if action == "rename" and paper_meta.get("title"):
+            new_dir = paper_dir.parent / _slugify(str(paper_meta["title"]))
+            if new_dir != paper_dir:
+                if new_dir.exists():
+                    raise FileExistsError(f"target proceedings paper dir already exists: {new_dir}")
+                paper_dir.rename(new_dir)
+
+    remaining = sorted(path for path in papers_dir.iterdir() if path.is_dir())
+    meta_path = proceeding_dir / "meta.json"
+    proceeding_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    if plan.get("volume_title"):
+        proceeding_meta["title"] = str(plan["volume_title"]).strip()
+    proceeding_meta["child_paper_count"] = len(remaining)
+    proceeding_meta["clean_status"] = "applied"
+    meta_path.write_text(json.dumps(proceeding_meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    (proceeding_dir / "clean_plan.json").write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+    build_proceedings_index(proceeding_dir.parent, proceeding_dir.parent / "proceedings.db", rebuild=True)
+    return proceeding_dir
 
 
 def apply_proceedings_split_plan(proceeding_dir: Path, split_plan: dict | Path) -> Path:

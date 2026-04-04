@@ -2083,6 +2083,19 @@ def cmd_fsearch(args: argparse.Namespace, cfg) -> None:
 
 
 def cmd_proceedings(args: argparse.Namespace, cfg) -> None:
+    if args.proceedings_action == "build-clean-candidates":
+        from scholaraio.ingest.proceedings import build_proceedings_clean_candidates
+
+        proceeding_dir = Path(args.proceeding_dir).expanduser()
+        if not proceeding_dir.exists():
+            ui(f"proceedings 目录不存在: {proceeding_dir}")
+            return
+
+        candidates_path = build_proceedings_clean_candidates(proceeding_dir)
+        ui(f"已生成 proceedings clean candidates: {candidates_path}")
+        ui("等待 agent 审阅 clean_candidates.json 并生成 clean_plan.json，然后再执行后续清洗。")
+        return
+
     if args.proceedings_action == "apply-split":
         from scholaraio.ingest.proceedings import apply_proceedings_split_plan
 
@@ -2100,6 +2113,27 @@ def cmd_proceedings(args: argparse.Namespace, cfg) -> None:
         meta = json.loads((proceeding_dir / "meta.json").read_text(encoding="utf-8"))
         ui(
             f"已应用 proceedings split plan: {proceeding_dir.name} "
+            f"({meta.get('child_paper_count', 0)} 篇)"
+        )
+        return
+
+    if args.proceedings_action == "apply-clean":
+        from scholaraio.ingest.proceedings import apply_proceedings_clean_plan
+
+        proceeding_dir = Path(args.proceeding_dir).expanduser()
+        clean_plan = Path(args.clean_plan).expanduser()
+
+        if not proceeding_dir.exists():
+            ui(f"proceedings 目录不存在: {proceeding_dir}")
+            return
+        if not clean_plan.exists():
+            ui(f"clean plan 不存在: {clean_plan}")
+            return
+
+        apply_proceedings_clean_plan(proceeding_dir, clean_plan)
+        meta = json.loads((proceeding_dir / "meta.json").read_text(encoding="utf-8"))
+        ui(
+            f"已应用 proceedings clean plan: {proceeding_dir.name} "
             f"({meta.get('child_paper_count', 0)} 篇)"
         )
         return
@@ -3291,6 +3325,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p_proc_apply = p_proc_sub.add_parser("apply-split", help="对已准备好的 proceedings 应用 split_plan.json")
     p_proc_apply.add_argument("proceeding_dir", help="proceedings 目录路径")
     p_proc_apply.add_argument("split_plan", help="split_plan.json 路径")
+
+    p_proc_clean_candidates = p_proc_sub.add_parser(
+        "build-clean-candidates", help="为已拆分的 proceedings 生成 clean_candidates.json"
+    )
+    p_proc_clean_candidates.add_argument("proceeding_dir", help="proceedings 目录路径")
+
+    p_proc_apply_clean = p_proc_sub.add_parser("apply-clean", help="对已拆分的 proceedings 应用 clean_plan.json")
+    p_proc_apply_clean.add_argument("proceeding_dir", help="proceedings 目录路径")
+    p_proc_apply_clean.add_argument("clean_plan", help="clean_plan.json 路径")
 
     # --- arxiv ---
     p_arxiv = sub.add_parser("arxiv", help="arXiv 检索与拉取工具")

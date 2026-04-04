@@ -64,25 +64,43 @@ scholaraio proceedings apply-split <proceeding_dir> <split_plan.json>
 
    - 这一步才会真正把子论文落到 `data/proceedings/<Volume>/papers/<Paper>/`
 
-5. Office 文件处理流程（`data/inbox-doc/` 中的 DOCX/XLSX/PPTX）：
+5. proceedings 拆分后支持半自动清洗流程：
+   - 先执行
+
+```bash
+scholaraio proceedings build-clean-candidates <proceeding_dir>
+```
+
+   - 该命令会生成 `clean_candidates.json`，用于汇总每个 child paper 的开头窗口、heading、缺失字段和结构信号
+   - 然后由 agent/人工审阅并生成 `clean_plan.json`
+   - 最后执行
+
+```bash
+scholaraio proceedings apply-clean <proceeding_dir> <clean_plan.json>
+```
+
+   - 第一版支持的清洗动作是 `keep` / `rename` / `reclassify` / `drop`
+   - 推荐先做结构性清洗（保留/重命名/重分类/删除），再考虑作者、摘要、DOI 等元数据提纯
+
+6. Office 文件处理流程（`data/inbox-doc/` 中的 DOCX/XLSX/PPTX）：
    - `step_office_convert`（MarkItDown）→ 转换为 `<stem>.md`
    - `step_extract_doc`（LLM 生成标题/摘要）
    - `step_ingest`（写入 `data/papers/`）
    - **依赖**：需安装 `pip install 'markitdown[docx,pptx,xlsx]'`
 
-6. 专利文献处理逻辑（`data/inbox-patent/`）：
+7. 专利文献处理逻辑（`data/inbox-patent/`）：
    - 自动提取公开号（CN/US/EP/WO/JP/KR/DE/FR/GB/TW/IN/AU 等格式）
    - 按公开号去重（非 DOI），跳过 DOI 检查
    - 自动标记 `paper_type: patent`
 
-7. 无 DOI 论文的处理逻辑：
+8. 无 DOI 论文的处理逻辑：
    - 来自 `data/inbox-thesis/` → 直接标记为 thesis 并入库
    - 来自 `data/inbox-doc/` → 标记为 document 类型，LLM 生成标题和摘要后入库
    - 来自 `data/inbox/` → LLM 分析判断是否 thesis
      - 是 thesis → 标记并入库
      - 不是 thesis → 转入 `data/pending/` 待人工确认
 
-8. 超长 PDF（>100 页）自动切分为短 PDF 分段转换后合并。
+9. 超长 PDF（>100 页）自动切分为短 PDF 分段转换后合并。
 
 ## 示例
 
