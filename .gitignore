@@ -32,6 +32,7 @@ config.local.yaml
 docs-dev/
 docs/issues.md
 docs/internal/
+docs/superpowers/
 
 # Local agent worktrees
 .claude/worktrees/
