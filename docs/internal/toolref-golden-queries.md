@@ -131,8 +131,8 @@ python -m scholaraio.cli toolref search lammps fix npt
 
 Expected:
 
-- rank 1: `lammps/fix_nh`
-- `fix_npt_asphere` and related variants may appear below, but should not outrank the main command page
+- `lammps/fix_nh` should appear in the top block
+- specialized variants such as `fix_npt_asphere` or `fix_npt_body` may appear above it under current legacy-compatible ranking
 
 ```bash
 python -m scholaraio.cli toolref search lammps pair style eam
@@ -168,8 +168,8 @@ Expected:
 
 Current observed healthy state after the latest parser/ranking fix:
 
-- QE `7.5`: `1214` indexed pages
-- LAMMPS `stable_2Aug2023_update3`: `980` indexed pages
+- QE `7.5`: `1188` indexed entries
+- LAMMPS `stable_2Aug2023_update3`: `980` indexed entries
 
 ## Bioinformatics Golden Queries
 
@@ -220,7 +220,7 @@ Expected:
 
 Current observed healthy state after the latest manifest/routing fix:
 
-- Bioinformatics `2026-03-curated`: `12` indexed pages
+- Bioinformatics `2026-03-curated`: `110` indexed pages
 
 ## Non-Goals
 

@@ -1,10 +1,6 @@
 ---
 name: bioinformatics
-description: Run bioinformatics analyses including genome alignment, variant calling, phylogenetics, protein structure prediction, and genomic visualization. Tools include BLAST, minimap2, samtools, bcftools, IQ-TREE, ESMFold, BioPython, and py3Dmol. Use when the user wants to analyze genomes, identify mutations, build phylogenetic trees, predict protein structures, or study evolutionary relationships.
-version: 1.0.0
-author: ZimoLiao/scholaraio
-license: MIT
-tags: ["scientific-computing", "bioinformatics", "genomics", "protein-structure", "phylogenetics"]
+description: Use when working on bioinformatics toolchains such as alignment, variant calling, phylogenetics, or protein-structure analysis, especially when the agent must route across BLAST, minimap2, samtools, bcftools, MAFFT, IQ-TREE, or ESMFold.
 ---
 
 # 生物信息学分析

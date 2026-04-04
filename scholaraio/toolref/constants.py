@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-_DEFAULT_TOOLREF_DIR = Path("data/toolref")
 _MANIFEST_REQUEST_TIMEOUT = (10, 20)
 _OPENFOAM_DISCOVERY_TIMEOUT = (5, 10)
 _OPENFOAM_MAX_DISCOVERY_PAGES = 800

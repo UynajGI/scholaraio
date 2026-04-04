@@ -1,10 +1,6 @@
 ---
 name: quantum-espresso
-description: Run first-principles DFT calculations with Quantum ESPRESSO. Covers SCF, band structure, DOS, phonon dispersion (DFPT), electron-phonon coupling, Fermi surface, and charge density visualization. Use when the user wants to calculate electronic structure, phonon properties, superconductivity, or optical properties of materials.
-version: 1.0.0
-author: ZimoLiao/scholaraio
-license: MIT
-tags: ["scientific-computing", "dft", "quantum-espresso", "condensed-matter", "first-principles"]
+description: Use when working on first-principles materials calculations with Quantum ESPRESSO, especially SCF, band structures, DOS, phonons, electron-phonon coupling, Fermi surfaces, or charge-density analysis.
 ---
 
 # Quantum ESPRESSO 第一性原理计算

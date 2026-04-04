@@ -4,6 +4,7 @@ import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from . import manifest as manifest_mod
 from .constants import TOOL_REGISTRY
 from .paths import _current_link, _toolref_root, _version_dir, validate_tool_name
 
@@ -63,6 +64,13 @@ def _ensure_db(db: Path) -> sqlite3.Connection:
     db.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db)
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.executescript(
+        """
+        DROP TRIGGER IF EXISTS toolref_ai;
+        DROP TRIGGER IF EXISTS toolref_ad;
+        DROP TRIGGER IF EXISTS toolref_au;
+        """
+    )
     conn.executescript(_PAGES_SCHEMA)
     conn.executescript(_FTS_SCHEMA)
     conn.executescript(_FTS_TRIGGERS)
@@ -87,7 +95,8 @@ def toolref_use(tool: str, version: str, *, cfg: Config | None = None) -> None:
             f"{tool} 版本 {version} 未找到。请先运行 `scholaraio toolref fetch {tool} --version {version}`"
         )
     _set_current(tool, version, cfg)
-    ui(f"[toolref] {tool} 当前版本已切换为 {version}")
+    display_name = TOOL_REGISTRY.get(tool, {}).get("display_name", tool)
+    ui(f"[toolref] {display_name} 当前版本已切换为 {version}")
 
 
 def toolref_list(tool: str | None = None, *, cfg: Config | None = None) -> list[dict]:
@@ -134,6 +143,14 @@ def toolref_list(tool: str | None = None, *, cfg: Config | None = None) -> list[
                     meta = {}
             if meta.get("source_type") == "manifest":
                 page_count = meta.get("fetched_pages", page_count)
+                expected_pages = meta.get("expected_pages")
+                actual_expected_pages = max(manifest_mod._expected_manifest_pages(t, vdir.name, cfg), page_count)
+                if expected_pages is None or expected_pages < actual_expected_pages:
+                    expected_pages = actual_expected_pages
+                failed_pages = max(expected_pages - page_count, 0)
+            else:
+                expected_pages = meta.get("expected_pages")
+                failed_pages = meta.get("failed_pages")
 
             results.append(
                 {
@@ -143,8 +160,8 @@ def toolref_list(tool: str | None = None, *, cfg: Config | None = None) -> list[
                     "is_current": vdir.name == current_version,
                     "page_count": page_count,
                     "source_type": meta.get("source_type", TOOL_REGISTRY.get(t, {}).get("source_type", "git")),
-                    "expected_pages": meta.get("expected_pages"),
-                    "failed_pages": meta.get("failed_pages"),
+                    "expected_pages": expected_pages,
+                    "failed_pages": failed_pages,
                 }
             )
 

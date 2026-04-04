@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from .paths import _current_link, _db_path, validate_tool_name
 
@@ -109,15 +108,14 @@ def _expand_search_query(tool: str, query: str) -> str:
     return " OR ".join(deduped) if len(deduped) > 1 else deduped[0]
 
 
-def _score_search_result(tool: str, normalized_query: str, expanded_query: str, row: Mapping[str, Any]) -> tuple[int, float]:
-    title = str(row.get("title") or "").lower()
-    page_name = str(row.get("page_name") or "").lower()
-    synopsis = str(row.get("synopsis") or "").lower()
-    content = str(row.get("content") or "").lower()
-    section = str(row.get("section") or "").lower()
-    program = str(row.get("program") or "").lower()
-    rank_value = row.get("rank")
-    rank = float(rank_value) if rank_value is not None else 0.0
+def _score_search_result(tool: str, normalized_query: str, expanded_query: str, row: sqlite3.Row) -> tuple[int, float]:
+    title = (row["title"] or "").lower()
+    page_name = (row["page_name"] or "").lower()
+    synopsis = (row["synopsis"] or "").lower()
+    content = (row["content"] or "").lower()
+    section = (row["section"] or "").lower()
+    program = (row["program"] or "").lower()
+    rank = float(row["rank"]) if row["rank"] is not None else 0.0
 
     score = 0
     normalized_slug = normalized_query.replace(" ", "-")
@@ -165,23 +163,6 @@ def _score_search_result(tool: str, normalized_query: str, expanded_query: str, 
                 score += 40
         if normalized_query == "temperature coupling" and page_name.endswith("/tcoupl"):
             score += 90
-    if tool == "lammps" and normalized_query:
-        exact_alias_key = f"|{normalized_query}|"
-        if exact_alias_key in content:
-            score += 160
-        elif normalized_query in synopsis:
-            score += 60
-    if tool == "openfoam":
-        if normalized_query == "y plus" and page_name.endswith("/yplus"):
-            score += 180
-        if normalized_query == "y plus" and title == "yplus":
-            score += 180
-        if normalized_query == "wall shear stress" and page_name.endswith("/wallshearstress"):
-            score += 180
-        if normalized_query == "wall shear stress" and title == "wallshearstress":
-            score += 180
-        if normalized_query in {"drag coefficient", "drag coefficients", "force coefficients"} and page_name.endswith(("/forces", "/forcecoeffs")):
-            score += 120
     if tool == "bioinformatics":
         if ("multiple sequence alignment" in normalized_query or normalized_query.startswith("msa")) and program == "mafft":
             score += 140
@@ -326,6 +307,7 @@ def toolref_search(
     section: str | None = None,
     cfg: Config | None = None,
 ) -> list[dict]:
+    """Full-text search over tool documentation."""
     if not validate_tool_name(tool):
         raise ValueError(f"未知工具：{tool}")
 
@@ -334,7 +316,9 @@ def toolref_search(
         raise FileNotFoundError(f"{tool} 文档未索引。请先运行 `scholaraio toolref fetch {tool}`")
 
     link = _current_link(tool, cfg)
-    version = link.resolve().name if link.is_symlink() else None
+    version = None
+    if link.is_symlink():
+        version = link.resolve().name
 
     conn = sqlite3.connect(db)
     conn.row_factory = sqlite3.Row
@@ -343,9 +327,14 @@ def toolref_search(
     expanded_query = _expand_search_query(tool, query)
     alias_phrase = _normalize_alias_phrase(normalized_query)
 
+    # build FTS5 query — auto-convert spaces to OR for better recall
     fts_query = expanded_query
-    if " " in expanded_query and not any(kw in expanded_query.upper() for kw in ("OR", "AND", "NOT", '"')):
-        fts_query = " OR ".join(expanded_query.split())
+    if (
+        " " in expanded_query
+        and not any(kw in expanded_query.upper() for kw in ("OR", "AND", "NOT", '"'))
+    ):
+        words = expanded_query.split()
+        fts_query = " OR ".join(words)
 
     try:
         sql = """
@@ -355,7 +344,7 @@ def toolref_search(
             WHERE toolref_fts MATCH ?
               AND p.tool = ?
         """
-        params: list[object] = [fts_query, tool]
+        params: list = [fts_query, tool]
 
         if version:
             sql += " AND p.version = ?"
@@ -382,23 +371,38 @@ def toolref_search(
         """
         params.extend(
             [
-                normalized_query,
-                f"%{alias_phrase or normalized_query}%",
-                normalized_query,
-                f"%/{normalized_query.replace(' ', '-')}%",
-                f"%{normalized_query}%",
-                max(top_k * 5, top_k),
+                normalized_query.lower(),
+                f"%|{alias_phrase}|%",
+                normalized_query.lower(),
+                f"%/{normalized_query.lower().replace(' ', '_')}",
+                f"%{alias_phrase}%",
             ]
         )
-        rows = [dict(row) for row in conn.execute(sql, params).fetchall()]
-    except sqlite3.OperationalError:
-        conn.close()
-        return []
+        params.append(top_k)
+
+        rows = conn.execute(sql, params).fetchall()
+    except Exception:
+        # FTS query syntax error — try quoting
+        safe_query = '"' + normalized_query.replace('"', "") + '"'
+        try:
+            rows = conn.execute(
+                """SELECT p.*, rank
+                   FROM toolref_fts f
+                   JOIN toolref_pages p ON f.rowid = p.id
+                   WHERE toolref_fts MATCH ?
+                     AND p.tool = ?
+                   ORDER BY rank LIMIT ?""",
+                (safe_query, tool, top_k),
+            ).fetchall()
+        except Exception:
+            rows = []
 
     conn.close()
-    ranked = sorted(
+    ranked_rows = sorted(
         rows,
-        key=lambda row: _score_search_result(tool, normalized_query, expanded_query, row),
-        reverse=True,
+        key=lambda row: (
+            -_score_search_result(tool, normalized_query.lower(), expanded_query.lower(), row)[0],
+            _score_search_result(tool, normalized_query.lower(), expanded_query.lower(), row)[1],
+        ),
     )
-    return ranked[:top_k]
+    return [dict(r) for r in ranked_rows[:top_k]]

@@ -231,6 +231,7 @@ def _classify_openfoam_section(rel_path: str) -> str:
 
 def _discover_openfoam_manifest_bundle(version: str, session: requests.Session) -> tuple[list[dict], dict[str, str]]:
     base_url = "https://doc.openfoam.com"
+    base_manifest = {item["page_name"]: dict(item) for item in _build_openfoam_manifest(version)}
     queue = [base_url.rstrip("/") + f"/{version}/{seed}" for seed in _OPENFOAM_DISCOVERY_SEEDS]
     seen: set[str] = set()
     discovered: set[str] = set()
@@ -260,7 +261,7 @@ def _discover_openfoam_manifest_bundle(version: str, session: requests.Session) 
     for rel_path in rel_paths:
         slug = Path(rel_path.rstrip("/")).name
         slug_counts[slug] = slug_counts.get(slug, 0) + 1
-    manifest: list[dict] = []
+    manifest_by_page = dict(base_manifest)
     for rel_path in rel_paths:
         mapped = _OPENFOAM_CORE_PAGE_MAP.get(rel_path)
         url = base_url.rstrip("/") + f"/{version}/{rel_path}"
@@ -275,7 +276,14 @@ def _discover_openfoam_manifest_bundle(version: str, session: requests.Session) 
                 page_name = f"openfoam/{slug}"
             else:
                 page_name = "openfoam/" + rel_path.rstrip("/").replace("/", "__")
-        manifest.append({"program": program, "section": section, "page_name": page_name, "title": title, "url": url})
+        manifest_by_page[page_name] = {
+            "program": program,
+            "section": section,
+            "page_name": page_name,
+            "title": title,
+            "url": url,
+        }
+    manifest = sorted(manifest_by_page.values(), key=lambda item: (item["section"], item["page_name"]))
     return manifest, prefetched_html
 
 

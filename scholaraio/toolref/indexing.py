@@ -88,5 +88,9 @@ def _index_tool(tool: str, version: str, cfg: Config | None = None) -> int:
         )
 
     conn.commit()
+    row = conn.execute(
+        "SELECT COUNT(*) FROM toolref_pages WHERE tool = ? AND version = ?",
+        (tool, version),
+    ).fetchone()
     conn.close()
-    return len(records)
+    return row[0] if row else 0

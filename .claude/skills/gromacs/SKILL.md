@@ -1,10 +1,6 @@
 ---
 name: gromacs
-description: Run molecular dynamics simulations with GROMACS. Covers system setup (PDB→topology→solvation), energy minimization, equilibration (NVT/NPT), production MD, trajectory analysis (RMSD/RMSF/Hbond), binding free energy (MM/PBSA), and visualization. Use when the user wants to simulate protein-ligand binding, membrane dynamics, or molecular interactions.
-version: 1.0.0
-author: ZimoLiao/scholaraio
-license: MIT
-tags: ["scientific-computing", "molecular-dynamics", "drug-design", "gromacs", "protein"]
+description: Use when working on biomolecular molecular dynamics with GROMACS, especially system setup, equilibration, production runs, trajectory analysis, or MM/PBSA-style post-processing.
 ---
 
 # GROMACS 分子动力学

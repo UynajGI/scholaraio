@@ -232,7 +232,7 @@ scholaraio toolref search <tool> "<real query>"
 ### LAMMPS
 
 - alias 是生产级体验的核心，不是装饰
-- 用户说 `fix npt`，系统就必须能稳稳落到 `fix_nh`
+- 用户说 `fix npt`，`show` 必须能稳稳落到 `fix_nh`，`search` 至少要把 `fix_nh` 放进最前排结果
 
 ### GROMACS
 

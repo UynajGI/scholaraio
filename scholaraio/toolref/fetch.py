@@ -24,6 +24,35 @@ if TYPE_CHECKING:
 _log = logging.getLogger(__name__)
 
 
+def _indexed_count_unit(info: dict) -> str:
+    return "文档页面" if info.get("source_type") == "manifest" else "文档条目"
+
+
+def _refresh_manifest_meta(tool: str, info: dict, version: str, force: bool, cfg: Config | None = None) -> dict:
+    vdir = _version_dir(tool, version, cfg)
+    meta_path = vdir / "meta.json"
+    meta = {
+        "tool": tool,
+        "display_name": info["display_name"],
+        "version": version,
+        "format": info["format"],
+        "repo": info.get("repo", ""),
+        "source_type": info.get("source_type", "manifest"),
+        "force_refreshed": force,
+    }
+    if meta_path.exists():
+        meta.update(json.loads(meta_path.read_text(encoding="utf-8")))
+    fetched_pages = manifest_mod._manifest_page_count(vdir)
+    expected_pages = manifest_mod._expected_manifest_pages(tool, version, cfg)
+    meta["fetched_pages"] = fetched_pages
+    meta["expected_pages"] = expected_pages
+    meta["failed_pages"] = max(expected_pages - fetched_pages, 0)
+    if "failed_page_names" not in meta:
+        meta["failed_page_names"] = []
+    meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    return meta
+
+
 def _clone_git_docs(tool: str, info: dict, version: str | None, cfg: Config | None = None) -> str:
     tag = f"{info['tag_prefix']}{version}" if version else None
 
@@ -229,10 +258,12 @@ def toolref_fetch(
         vdir = _version_dir(tool, version, cfg)
         if vdir.exists() and not force:
             if manifest_mod._has_local_docs(tool, version, cfg):
+                if source_type == "manifest":
+                    _refresh_manifest_meta(tool, info, version, force, cfg)
                 ui(f"[toolref] {info['display_name']} {version} 文档已存在，跳过拉取")
                 count = _index_tool(tool, version, cfg)
                 storage_mod._set_current(tool, version, cfg)
-                ui(f"[toolref] {info['display_name']} {version}：已索引 {count} 个文档页面")
+                ui(f"[toolref] {info['display_name']} {version}：已索引 {count} 个{_indexed_count_unit(info)}")
                 return count
             ui(f"[toolref] 检测到 {info['display_name']} {version} 残缺目录，重新拉取")
         elif vdir.exists() and force:
@@ -257,18 +288,10 @@ def toolref_fetch(
         "force_refreshed": force,
     }
     if source_type == "manifest":
-        meta_path = vdir / "meta.json"
-        if meta_path.exists():
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        else:
-            fetched_pages = manifest_mod._manifest_page_count(vdir)
-            expected_pages = manifest_mod._expected_manifest_pages(tool, version, cfg)
-            meta["fetched_pages"] = fetched_pages
-            meta["expected_pages"] = expected_pages
-            meta["failed_pages"] = expected_pages - fetched_pages
+        meta = _refresh_manifest_meta(tool, info, version, force, cfg)
     (vdir / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
 
     storage_mod._set_current(tool, version, cfg)
     count = _index_tool(tool, version, cfg)
-    ui(f"[toolref] {info['display_name']} {version}：已索引 {count} 个文档页面")
+    ui(f"[toolref] {info['display_name']} {version}：已索引 {count} 个{_indexed_count_unit(info)}")
     return count

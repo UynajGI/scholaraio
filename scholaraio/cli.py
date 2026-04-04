@@ -843,13 +843,14 @@ def cmd_toolref(args: argparse.Namespace, cfg) -> None:
                     ui(f"\n{e['display_name']}:")
                 marker = " (current)" if e["is_current"] else ""
                 completeness = ""
+                unit = "页" if e.get("source_type") == "manifest" else "条"
                 if e.get("source_type") == "manifest" and e.get("expected_pages"):
                     completeness = f" [{e['page_count']}/{e['expected_pages']} 已索引"
                     failed_pages = e.get("failed_pages")
                     if failed_pages:
                         completeness += f", {failed_pages} 失败"
                     completeness += "]"
-                ui(f"  {e['version']}{marker} — {e['page_count']} 页{completeness}")
+                ui(f"  {e['version']}{marker} — {e['page_count']} {unit}{completeness}")
 
         elif action == "use":
             toolref_use(args.tool, args.version, cfg=cfg)

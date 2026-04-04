@@ -1,10 +1,6 @@
 ---
 name: lammps
-description: Run molecular dynamics and materials simulations with LAMMPS. Covers crystal construction, interatomic potentials (EAM/Tersoff/ReaxFF), shock/deformation simulations, structure analysis (CNA/PTM), thermodynamic profiling, and OVITO visualization. Use when the user wants to simulate material properties, phase transformations, mechanical testing, or nanoscale phenomena.
-version: 1.0.0
-author: ZimoLiao/scholaraio
-license: MIT
-tags: ["scientific-computing", "molecular-dynamics", "materials-science", "lammps", "nanomaterials"]
+description: Use when working on classical materials simulations with LAMMPS, especially interatomic-potential selection, shock or deformation setups, thermodynamic runs, and structure analysis for solids or nanomaterials.
 ---
 
 # LAMMPS 材料科学模拟
@@ -64,7 +60,7 @@ GPU 加速：`package gpu 4` 在输入脚本开头启用，`suffix gpu` 自动�
 ```bash
 scholaraio toolref search lammps "nose hoover thermostat"
 scholaraio toolref show lammps fix_nh
-scholaraio toolref show lammps pair_eam_fs
+scholaraio toolref show lammps pair_eam
 scholaraio toolref show lammps compute_cna_atom
 scholaraio toolref show lammps fix_deform
 ```

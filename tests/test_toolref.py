@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 
 import pytest
 
@@ -31,10 +32,12 @@ from scholaraio.toolref import (
 @pytest.fixture
 def toolref_mod():
     from scholaraio import toolref as mod
+    from scholaraio.toolref import _legacy_snapshot as legacy_mod
     from scholaraio.toolref import fetch as fetch_mod
     from scholaraio.toolref import indexing as indexing_mod
     from scholaraio.toolref import manifest as manifest_mod
     from scholaraio.toolref import paths as paths_mod
+    from scholaraio.toolref import search as search_mod
 
     return {
         "api": mod,
@@ -42,7 +45,195 @@ def toolref_mod():
         "manifest": manifest_mod,
         "fetch": fetch_mod,
         "indexing": indexing_mod,
+        "search": search_mod,
+        "legacy": legacy_mod,
     }
+
+
+def test_toolref_package_compat_for_default_dir_and_requests(tmp_path, toolref_mod):
+    mod = toolref_mod["api"]
+    paths_mod = toolref_mod["paths"]
+    fetch_mod = toolref_mod["fetch"]
+
+    original_root = paths_mod._DEFAULT_TOOLREF_DIR
+    try:
+        mod._DEFAULT_TOOLREF_DIR = tmp_path
+        assert paths_mod._DEFAULT_TOOLREF_DIR == tmp_path
+        assert mod._db_path("qe") == tmp_path / "qe" / "toolref.db"
+        assert mod.requests is fetch_mod.requests
+    finally:
+        mod._DEFAULT_TOOLREF_DIR = original_root
+
+
+def test_index_tool_returns_final_unique_entry_count(tmp_path, monkeypatch, toolref_mod):
+    paths_mod = toolref_mod["paths"]
+    indexing_mod = toolref_mod["indexing"]
+
+    monkeypatch.setattr(paths_mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
+    vdir = tmp_path / "qe" / "7.5" / "def"
+    vdir.mkdir(parents=True)
+    (vdir / "INPUT_FAKE.def").write_text("ignored", encoding="utf-8")
+    monkeypatch.setattr(
+        indexing_mod,
+        "_parse_qe_def",
+        lambda _path: [
+            {
+                "program": "pw.x",
+                "section": "SYSTEM",
+                "page_name": "pw.x/SYSTEM/ecutwfc",
+                "title": "ecutwfc",
+                "content": "first",
+            },
+            {
+                "program": "pw.x",
+                "section": "SYSTEM",
+                "page_name": "pw.x/SYSTEM/ecutwfc",
+                "title": "ecutwfc",
+                "content": "updated",
+            },
+            {
+                "program": "pw.x",
+                "section": "ELECTRONS",
+                "page_name": "pw.x/ELECTRONS/conv_thr",
+                "title": "conv_thr",
+                "content": "third",
+            },
+        ],
+    )
+
+    count = indexing_mod._index_tool("qe", "7.5", cfg=None)
+
+    assert count == 2
+    conn = sqlite3.connect(tmp_path / "qe" / "toolref.db")
+    try:
+        db_count = conn.execute(
+            "SELECT COUNT(*) FROM toolref_pages WHERE tool = ? AND version = ?",
+            ("qe", "7.5"),
+        ).fetchone()[0]
+        assert db_count == 2
+    finally:
+        conn.close()
+
+
+def test_ensure_db_drops_legacy_fts_triggers(tmp_path):
+    from scholaraio.toolref.storage import _ensure_db
+
+    db = tmp_path / "toolref.db"
+    conn = sqlite3.connect(db)
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE toolref_pages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tool TEXT NOT NULL,
+                version TEXT NOT NULL,
+                program TEXT,
+                section TEXT,
+                page_name TEXT NOT NULL,
+                title TEXT,
+                category TEXT,
+                var_type TEXT,
+                default_val TEXT,
+                synopsis TEXT,
+                content TEXT NOT NULL,
+                UNIQUE(tool, version, page_name)
+            );
+            CREATE VIRTUAL TABLE toolref_fts USING fts5(
+                page_name, title, synopsis, content,
+                content=toolref_pages,
+                content_rowid=id
+            );
+            CREATE TRIGGER toolref_ai AFTER INSERT ON toolref_pages BEGIN
+                INSERT INTO toolref_fts(rowid, page_name, title, synopsis, content)
+                VALUES (new.id, new.page_name, new.title, new.synopsis, new.content);
+            END;
+            CREATE TRIGGER toolref_ad AFTER DELETE ON toolref_pages BEGIN
+                INSERT INTO toolref_fts(toolref_fts, rowid, page_name, title, synopsis, content)
+                VALUES ('delete', old.id, old.page_name, old.title, old.synopsis, old.content);
+            END;
+            CREATE TRIGGER toolref_au AFTER UPDATE ON toolref_pages BEGIN
+                INSERT INTO toolref_fts(toolref_fts, rowid, page_name, title, synopsis, content)
+                VALUES ('delete', old.id, old.page_name, old.title, old.synopsis, old.content);
+                INSERT INTO toolref_fts(rowid, page_name, title, synopsis, content)
+                VALUES (new.id, new.page_name, new.title, new.synopsis, new.content);
+            END;
+            """
+        )
+        conn.execute(
+            """INSERT INTO toolref_pages
+               (tool, version, program, section, page_name, title, synopsis, content)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            ("qe", "7.5", "pw.x", "SYSTEM", "pw.x/SYSTEM/ecutwfc", "ecutwfc", "cutoff", "content"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    conn = _ensure_db(db)
+    try:
+        trigger_names = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='trigger' ORDER BY name"
+            ).fetchall()
+        }
+        assert "toolref_ai" not in trigger_names
+        assert "toolref_ad" not in trigger_names
+        assert "toolref_au" not in trigger_names
+        assert "toolref_pages_ai" in trigger_names
+        assert "toolref_pages_ad" in trigger_names
+        assert "toolref_pages_au" in trigger_names
+
+        conn.execute("DELETE FROM toolref_pages WHERE tool = ? AND version = ?", ("qe", "7.5"))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_toolref_fetch_refreshes_manifest_meta_when_skipping_existing_docs(tmp_path, monkeypatch, toolref_mod):
+    paths_mod = toolref_mod["paths"]
+    fetch_mod = toolref_mod["fetch"]
+
+    monkeypatch.setattr(paths_mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
+    vdir = tmp_path / "openfoam" / "2312"
+    pages_dir = vdir / "pages"
+    pages_dir.mkdir(parents=True)
+    for idx, page_name in enumerate(["openfoam/simpleFoam", "openfoam/fvSchemes"], start=1):
+        stem = f"{idx:03d}-page"
+        (pages_dir / f"{stem}.html").write_text("<main><h1>page</h1></main>", encoding="utf-8")
+        (pages_dir / f"{stem}.json").write_text(json.dumps({"page_name": page_name}), encoding="utf-8")
+    (vdir / "manifest.json").write_text(
+        json.dumps([{"page_name": "openfoam/simpleFoam"}, {"page_name": "openfoam/fvSchemes"}]),
+        encoding="utf-8",
+    )
+    (vdir / "meta.json").write_text(
+        json.dumps(
+            {
+                "tool": "openfoam",
+                "display_name": "OpenFOAM",
+                "version": "2312",
+                "format": "html",
+                "repo": "",
+                "source_type": "manifest",
+                "force_refreshed": False,
+                "fetched_pages": 2,
+                "expected_pages": 1,
+                "failed_pages": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(fetch_mod, "_index_tool", lambda tool, version, cfg=None: 2)
+    monkeypatch.setattr(fetch_mod.storage_mod, "_set_current", lambda tool, version, cfg=None: None)
+
+    count = fetch_mod.toolref_fetch("openfoam", version="2312", cfg=None)
+
+    assert count == 2
+    meta = json.loads((vdir / "meta.json").read_text(encoding="utf-8"))
+    assert meta["fetched_pages"] == 2
+    assert meta["expected_pages"] == 2
+    assert meta["failed_pages"] == 0
 
 
 def test_normalize_program_filter_for_qe():
@@ -171,6 +362,39 @@ def test_discover_openfoam_manifest_builds_curated_mainline_pages():
     assert "openfoam/forceCoeffs" in page_names
     assert "openfoam/kOmegaSST" in page_names
     assert all("installation" not in item["url"] for item in manifest)
+
+
+def test_discover_openfoam_manifest_preserves_curated_core_pages_when_crawl_is_partial():
+    class FakeResponse:
+        def __init__(self, text: str):
+            self.text = text
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+        def __init__(self):
+            self.pages = {
+                "https://doc.openfoam.com/2312/fundamentals/": """
+                    <a href="/2312/fundamentals/case-structure/controldict/">controlDict</a>
+                """,
+                "https://doc.openfoam.com/2312/tools/": """
+                    <a href="/2312/tools/post-processing/function-objects/forces/forceCoeffs/">forceCoeffs</a>
+                """,
+                "https://doc.openfoam.com/2312/fundamentals/case-structure/controldict/": "<main><h1>controlDict</h1></main>",
+                "https://doc.openfoam.com/2312/tools/post-processing/function-objects/forces/forceCoeffs/": "<main><h1>forceCoeffs</h1></main>",
+            }
+
+        def get(self, url, timeout=None):
+            return FakeResponse(self.pages[url])
+
+    manifest = _discover_openfoam_manifest("2312", FakeSession())
+    page_names = {item["page_name"] for item in manifest}
+
+    assert "openfoam/simpleFoam" in page_names
+    assert "openfoam/fvSchemes" in page_names
+    assert "openfoam/controlDict" in page_names
+    assert "openfoam/forceCoeffs" in page_names
 
 
 def test_build_openfoam_manifest_includes_specific_mesh_and_post_pages():
@@ -374,10 +598,10 @@ def test_toolref_fetch_bioinformatics_reuses_prefetched_seed_html_for_anchor_pag
             self.headers = {}
 
         def get(self, url, timeout=60):
-            raise mod.requests.RequestException(f"unexpected fetch: {url}")
+            raise fetch_mod.requests.RequestException(f"unexpected fetch: {url}")
 
     monkeypatch.setattr(paths_mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
-    monkeypatch.setattr(mod.requests, "Session", FakeSession)
+    monkeypatch.setattr(fetch_mod.requests, "Session", FakeSession)
     monkeypatch.setattr(
         fetch_mod.manifest_mod,
         "_discover_bioinformatics_manifest",
@@ -547,7 +771,7 @@ def test_toolref_fetch_manifest_force_rebuilds_pages(tmp_path, monkeypatch, tool
             return FakeResponse(f"<html><body><main><h1>{url}</h1></main></body></html>")
 
     monkeypatch.setattr(paths_mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
-    monkeypatch.setattr(mod.requests, "Session", FakeSession)
+    monkeypatch.setattr(fetch_mod.requests, "Session", FakeSession)
     monkeypatch.setattr(
         fetch_mod.manifest_mod,
         "_build_manifest",
@@ -581,12 +805,17 @@ def test_toolref_list_reads_manifest_meta(tmp_path, monkeypatch, toolref_mod):
     monkeypatch.setattr(paths_mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
     vdir = tmp_path / "openfoam" / "2312"
     vdir.mkdir(parents=True)
+    (vdir / "manifest.json").write_text(
+        json.dumps([{"page_name": f"page-{idx}"} for idx in range(11)]),
+        encoding="utf-8",
+    )
     (vdir / "meta.json").write_text(
         json.dumps(
             {
                 "tool": "openfoam",
                 "version": "2312",
                 "source_type": "manifest",
+                "fetched_pages": 9,
                 "expected_pages": 11,
                 "failed_pages": 2,
             }
@@ -600,6 +829,43 @@ def test_toolref_list_reads_manifest_meta(tmp_path, monkeypatch, toolref_mod):
     assert entries[0]["source_type"] == "manifest"
     assert entries[0]["expected_pages"] == 11
     assert entries[0]["failed_pages"] == 2
+
+
+def test_toolref_list_reconciles_stale_manifest_meta_with_snapshot(tmp_path, monkeypatch, toolref_mod):
+    paths_mod = toolref_mod["paths"]
+
+    monkeypatch.setattr(paths_mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
+    vdir = tmp_path / "openfoam" / "2312"
+    pages_dir = vdir / "pages"
+    pages_dir.mkdir(parents=True)
+    for idx, page_name in enumerate(["openfoam/simpleFoam", "openfoam/fvSchemes"], start=1):
+        stem = f"{idx:03d}-page"
+        (pages_dir / f"{stem}.html").write_text("<main><h1>page</h1></main>", encoding="utf-8")
+        (pages_dir / f"{stem}.json").write_text(json.dumps({"page_name": page_name}), encoding="utf-8")
+    (vdir / "manifest.json").write_text(
+        json.dumps([{"page_name": "openfoam/simpleFoam"}, {"page_name": "openfoam/fvSchemes"}]),
+        encoding="utf-8",
+    )
+    (vdir / "meta.json").write_text(
+        json.dumps(
+            {
+                "tool": "openfoam",
+                "version": "2312",
+                "source_type": "manifest",
+                "fetched_pages": 2,
+                "expected_pages": 1,
+                "failed_pages": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "openfoam" / "current").symlink_to(vdir, target_is_directory=True)
+
+    entries = toolref_list("openfoam", cfg=None)
+    assert len(entries) == 1
+    assert entries[0]["page_count"] == 2
+    assert entries[0]["expected_pages"] == 2
+    assert entries[0]["failed_pages"] == 0
 
 
 def test_toolref_fetch_manifest_force_keeps_more_complete_cache(tmp_path, monkeypatch, toolref_mod):
@@ -620,7 +886,7 @@ def test_toolref_fetch_manifest_force_keeps_more_complete_cache(tmp_path, monkey
 
         def get(self, url, timeout=60):
             if "view" in url:
-                raise mod.requests.RequestException("boom")
+                raise fetch_mod.requests.RequestException("boom")
             return FakeResponse(f"<html><body><main><h1>{url}</h1></main></body></html>")
 
     monkeypatch.setattr(paths_mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
@@ -670,7 +936,7 @@ def test_toolref_fetch_manifest_force_keeps_more_complete_cache(tmp_path, monkey
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(mod.requests, "Session", FakeSession)
+    monkeypatch.setattr(fetch_mod.requests, "Session", FakeSession)
     monkeypatch.setattr(fetch_mod, "_index_tool", lambda tool, version, cfg=None: fetch_mod.manifest_mod._manifest_page_count(vdir))
     monkeypatch.setattr(fetch_mod.storage_mod, "_set_current", lambda tool, version, cfg=None: None)
 
@@ -701,11 +967,11 @@ def test_toolref_fetch_manifest_force_preserves_failed_pages_from_existing_cache
 
         def get(self, url, timeout=60):
             if "simpleFoam" in url:
-                raise mod.requests.RequestException("timeout")
+                raise fetch_mod.requests.RequestException("timeout")
             return FakeResponse(f"<html><body><main><h1>{url}</h1></main></body></html>")
 
     monkeypatch.setattr(paths_mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
-    monkeypatch.setattr(mod.requests, "Session", FakeSession)
+    monkeypatch.setattr(fetch_mod.requests, "Session", FakeSession)
     monkeypatch.setattr(
         fetch_mod.manifest_mod,
         "_build_manifest",
@@ -792,12 +1058,12 @@ def test_toolref_fetch_manifest_uses_fallback_urls(tmp_path, monkeypatch, toolre
         def get(self, url, timeout=60):
             self.calls.append(url)
             if "primary" in url:
-                raise mod.requests.RequestException("timeout")
+                raise fetch_mod.requests.RequestException("timeout")
             return FakeResponse("<html><body><main><h1>minimap2 manual</h1></main></body></html>")
 
     monkeypatch.setattr(paths_mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
     session = FakeSession()
-    monkeypatch.setattr(mod.requests, "Session", lambda: session)
+    monkeypatch.setattr(fetch_mod.requests, "Session", lambda: session)
     monkeypatch.setattr(
         fetch_mod.manifest_mod,
         "_build_manifest",
@@ -821,12 +1087,14 @@ def test_toolref_fetch_manifest_uses_fallback_urls(tmp_path, monkeypatch, toolre
     assert session.calls == ["https://example.org/primary", "https://example.org/fallback"]
 
 
-def test_toolref_show_falls_back_to_program_manual_page(tmp_path, monkeypatch):
+def test_toolref_show_falls_back_to_program_manual_page(tmp_path, monkeypatch, toolref_mod):
     import sqlite3
 
     from scholaraio import toolref as mod
 
-    monkeypatch.setattr(mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
+    paths_mod = toolref_mod["paths"]
+
+    monkeypatch.setattr(paths_mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
     tdir = tmp_path / "bioinformatics"
     vdir = tdir / "2026-03-curated"
     vdir.mkdir(parents=True)
@@ -908,12 +1176,14 @@ Thermostat and barostat.
     assert "fix npt" in parsed["content"]
 
 
-def test_toolref_show_qe_prefers_exact_program_title_match(tmp_path, monkeypatch):
+def test_toolref_show_qe_prefers_exact_program_title_match(tmp_path, monkeypatch, toolref_mod):
     import sqlite3
 
     from scholaraio import toolref as mod
 
-    monkeypatch.setattr(mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
+    paths_mod = toolref_mod["paths"]
+
+    monkeypatch.setattr(paths_mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
     tdir = tmp_path / "qe"
     vdir = tdir / "7.5"
     vdir.mkdir(parents=True)
@@ -942,12 +1212,14 @@ def test_toolref_show_qe_prefers_exact_program_title_match(tmp_path, monkeypatch
     assert rows[0]["page_name"] == "pw.x/ELECTRONS/conv_thr"
 
 
-def test_toolref_show_lammps_resolves_alias_from_query(tmp_path, monkeypatch):
+def test_toolref_show_lammps_resolves_alias_from_query(tmp_path, monkeypatch, toolref_mod):
     import sqlite3
 
     from scholaraio import toolref as mod
 
-    monkeypatch.setattr(mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
+    paths_mod = toolref_mod["paths"]
+
+    monkeypatch.setattr(paths_mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
     tdir = tmp_path / "lammps"
     vdir = tdir / "stable"
     vdir.mkdir(parents=True)
@@ -996,12 +1268,14 @@ def test_toolref_show_lammps_resolves_alias_from_query(tmp_path, monkeypatch):
     assert rows[0]["page_name"] == "lammps/fix_nh"
 
 
-def test_toolref_search_lammps_boosts_exact_alias_match(tmp_path, monkeypatch):
+def test_toolref_search_lammps_boosts_exact_alias_match(tmp_path, monkeypatch, toolref_mod):
     import sqlite3
 
     from scholaraio import toolref as mod
 
-    monkeypatch.setattr(mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
+    paths_mod = toolref_mod["paths"]
+
+    monkeypatch.setattr(paths_mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
     tdir = tmp_path / "lammps"
     vdir = tdir / "stable"
     vdir.mkdir(parents=True)
@@ -1098,12 +1372,123 @@ def test_expand_search_query_adds_gromacs_aliases():
     assert "pcoupl" in expanded
 
 
-def test_toolref_search_gromacs_boosts_parameter_hits(tmp_path, monkeypatch):
+def test_score_search_result_matches_legacy_for_lammps_alias_row(toolref_mod):
+    search_mod = toolref_mod["search"]
+    legacy_mod = toolref_mod["legacy"]
+
+    query = "fix npt"
+    normalized_query = search_mod._normalize_search_query(query)
+    expanded_query = search_mod._expand_search_query("lammps", query)
+    row = {
+        "title": "fix nvt command",
+        "page_name": "lammps/fix_nh",
+        "synopsis": "fix ID group-ID style_name keyword value ... | Aliases: fix nvt, fix npt, fix nph",
+        "content": "Alias keys: |fix nvt| |fix npt| |fix nph|",
+        "section": "fix",
+        "program": "lammps",
+        "rank": -4.8,
+    }
+
+    assert search_mod._score_search_result("lammps", normalized_query, expanded_query, row) == legacy_mod._score_search_result(
+        "lammps", normalized_query, expanded_query, row
+    )
+
+
+def test_score_search_result_matches_legacy_for_openfoam_row(toolref_mod):
+    search_mod = toolref_mod["search"]
+    legacy_mod = toolref_mod["legacy"]
+
+    query = "y plus"
+    normalized_query = search_mod._normalize_search_query(query)
+    expanded_query = search_mod._expand_search_query("openfoam", query)
+    row = {
+        "title": "yplus",
+        "page_name": "openfoam/yPlus",
+        "synopsis": "post processing field function object",
+        "content": "y plus wall function boundary layer",
+        "section": "post-processing",
+        "program": "yPlus",
+        "rank": -7.1,
+    }
+
+    assert search_mod._score_search_result("openfoam", normalized_query, expanded_query, row) == legacy_mod._score_search_result(
+        "openfoam", normalized_query, expanded_query, row
+    )
+
+
+def test_toolref_search_matches_legacy_tie_break_order(tmp_path, monkeypatch, toolref_mod):
+    search_mod = toolref_mod["search"]
+    db_path = tmp_path / "toolref.db"
+    db_path.write_text("", encoding="utf-8")
+
+    class FakeCursor:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return list(self._rows)
+
+    class FakeConn:
+        def __init__(self, rows):
+            self.rows = rows
+            self.row_factory = None
+
+        def execute(self, _sql, _params):
+            return FakeCursor(self.rows)
+
+        def close(self):
+            return None
+
+    rows = [
+        {
+            "id": 1,
+            "tool": "gromacs",
+            "version": "2024",
+            "program": "gromacs",
+            "section": "mdp",
+            "page_name": "gromacs/mdp/tau-p",
+            "title": "tau-p",
+            "category": "mdp",
+            "var_type": "",
+            "default_val": "",
+            "synopsis": "MDP parameter",
+            "content": "The time constant for pressure coupling.",
+            "rank": -18.0,
+        },
+        {
+            "id": 2,
+            "tool": "gromacs",
+            "version": "2024",
+            "program": "gromacs",
+            "section": "mdp",
+            "page_name": "gromacs/mdp/ref-p",
+            "title": "ref-p",
+            "category": "mdp",
+            "var_type": "",
+            "default_val": "",
+            "synopsis": "MDP parameter",
+            "content": "The reference setting for pressure coupling.",
+            "rank": -21.0,
+        },
+    ]
+
+    monkeypatch.setattr(search_mod, "_db_path", lambda tool, cfg=None: db_path)
+    monkeypatch.setattr(search_mod, "_current_link", lambda tool, cfg=None: tmp_path / "current")
+    monkeypatch.setattr(search_mod.sqlite3, "connect", lambda _path: FakeConn(rows))
+
+    results = search_mod.toolref_search("gromacs", "pressure coupling", cfg=None)
+
+    assert [row["page_name"] for row in results[:2]] == ["gromacs/mdp/ref-p", "gromacs/mdp/tau-p"]
+
+
+def test_toolref_search_gromacs_boosts_parameter_hits(tmp_path, monkeypatch, toolref_mod):
     import sqlite3
 
     from scholaraio import toolref as mod
 
-    monkeypatch.setattr(mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
+    paths_mod = toolref_mod["paths"]
+
+    monkeypatch.setattr(paths_mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
     tdir = tmp_path / "gromacs"
     vdir = tdir / "2024"
     vdir.mkdir(parents=True)
@@ -1152,12 +1537,14 @@ def test_toolref_search_gromacs_boosts_parameter_hits(tmp_path, monkeypatch):
     assert rows[0]["page_name"] == "gromacs/mdp/pcoupl"
 
 
-def test_toolref_search_gromacs_v_rescale_maps_to_tcoupl(tmp_path, monkeypatch):
+def test_toolref_search_gromacs_v_rescale_maps_to_tcoupl(tmp_path, monkeypatch, toolref_mod):
     import sqlite3
 
     from scholaraio import toolref as mod
 
-    monkeypatch.setattr(mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
+    paths_mod = toolref_mod["paths"]
+
+    monkeypatch.setattr(paths_mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
     tdir = tmp_path / "gromacs"
     vdir = tdir / "2024"
     vdir.mkdir(parents=True)
@@ -1206,12 +1593,14 @@ def test_toolref_search_gromacs_v_rescale_maps_to_tcoupl(tmp_path, monkeypatch):
     assert rows[0]["page_name"] == "gromacs/mdp/tcoupl"
 
 
-def test_toolref_search_gromacs_pressure_coupling_prefers_pcoupl(tmp_path, monkeypatch):
+def test_toolref_search_gromacs_pressure_coupling_prefers_pcoupl(tmp_path, monkeypatch, toolref_mod):
     import sqlite3
 
     from scholaraio import toolref as mod
 
-    monkeypatch.setattr(mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
+    paths_mod = toolref_mod["paths"]
+
+    monkeypatch.setattr(paths_mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
     tdir = tmp_path / "gromacs"
     vdir = tdir / "2024"
     vdir.mkdir(parents=True)
@@ -1260,12 +1649,14 @@ def test_toolref_search_gromacs_pressure_coupling_prefers_pcoupl(tmp_path, monke
     assert rows[0]["page_name"] == "gromacs/mdp/pcoupl"
 
 
-def test_toolref_search_bioinformatics_multiple_sequence_alignment_prefers_mafft(tmp_path, monkeypatch):
+def test_toolref_search_bioinformatics_multiple_sequence_alignment_prefers_mafft(tmp_path, monkeypatch, toolref_mod):
     import sqlite3
 
     from scholaraio import toolref as mod
 
-    monkeypatch.setattr(mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
+    paths_mod = toolref_mod["paths"]
+
+    monkeypatch.setattr(paths_mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
     tdir = tmp_path / "bioinformatics"
     vdir = tdir / "2026-03-curated"
     vdir.mkdir(parents=True)
@@ -1314,12 +1705,14 @@ def test_toolref_search_bioinformatics_multiple_sequence_alignment_prefers_mafft
     assert rows[0]["page_name"] == "mafft/manual"
 
 
-def test_toolref_search_bioinformatics_bam_indexing_prefers_samtools_index(tmp_path, monkeypatch):
+def test_toolref_search_bioinformatics_bam_indexing_prefers_samtools_index(tmp_path, monkeypatch, toolref_mod):
     import sqlite3
 
     from scholaraio import toolref as mod
 
-    monkeypatch.setattr(mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
+    paths_mod = toolref_mod["paths"]
+
+    monkeypatch.setattr(paths_mod, "_DEFAULT_TOOLREF_DIR", tmp_path)
     tdir = tmp_path / "bioinformatics"
     vdir = tdir / "2026-03-curated"
     vdir.mkdir(parents=True)

@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import sys
+import types
+
+import requests
+
+from . import paths as _paths_mod
 from .constants import TOOL_REGISTRY
 from .fetch import toolref_fetch
 from .indexing import _index_tool
@@ -35,7 +41,6 @@ from .parsers import (
     _pick_manifest_synopsis,
 )
 from .paths import (
-    _DEFAULT_TOOLREF_DIR,
     _current_link,
     _db_path,
     _tool_dir,
@@ -55,6 +60,24 @@ from .search import (
     toolref_show,
 )
 from .storage import _FTS_SCHEMA, _FTS_TRIGGERS, _PAGES_SCHEMA, _ensure_db, _set_current, toolref_list, toolref_use
+
+
+class _ToolrefModule(types.ModuleType):
+    """Preserve legacy module-level patch points after the package split."""
+
+    def __getattribute__(self, name: str):
+        if name == "_DEFAULT_TOOLREF_DIR":
+            return _paths_mod._DEFAULT_TOOLREF_DIR
+        return super().__getattribute__(name)
+
+    def __setattr__(self, name: str, value) -> None:
+        if name == "_DEFAULT_TOOLREF_DIR":
+            _paths_mod._DEFAULT_TOOLREF_DIR = value
+            return
+        super().__setattr__(name, value)
+
+
+sys.modules[__name__].__class__ = _ToolrefModule
 
 __all__ = [
     "TOOL_REGISTRY",
@@ -104,6 +127,7 @@ __all__ = [
     "_validate_version",
     "_version_dir",
     "_write_manifest_snapshot",
+    "requests",
     "toolref_fetch",
     "toolref_list",
     "toolref_search",
