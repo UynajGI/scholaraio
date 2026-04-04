@@ -180,21 +180,42 @@ def copy_parser_assets(selected_md: Path, md_path: Path) -> None:
     """Copy assets emitted alongside parser markdown output.
 
     Many parsers write markdown plus sibling asset directories (for example
-    ``images/``). Copy the selected markdown's sibling tree into the final
-    output directory before replacing the markdown file itself.
+    ``images/``). Refresh the final output directory so it matches the
+    selected parser run, then copy the sibling asset tree before replacing
+    the markdown file itself.
     """
     src_dir = selected_md.parent
     dst_dir = md_path.parent
     dst_dir.mkdir(parents=True, exist_ok=True)
 
-    for item in src_dir.iterdir():
-        if item == selected_md:
-            continue
-        target = dst_dir / item.name
-        if item.is_dir():
-            shutil.copytree(item, target, dirs_exist_ok=True)
-        else:
-            shutil.copy2(item, target)
+    if src_dir.resolve() == dst_dir.resolve():
+        return
+
+    with tempfile.TemporaryDirectory(prefix="scholaraio-parser-assets-") as tmp:
+        staging_dir = Path(tmp)
+        for item in src_dir.iterdir():
+            if item == selected_md:
+                continue
+            staged = staging_dir / item.name
+            if item.is_dir():
+                shutil.copytree(item, staged)
+            else:
+                shutil.copy2(item, staged)
+
+        for existing in dst_dir.iterdir():
+            if existing == md_path:
+                continue
+            if existing.is_dir():
+                shutil.rmtree(existing)
+            else:
+                existing.unlink()
+
+        for item in staging_dir.iterdir():
+            target = dst_dir / item.name
+            if item.is_dir():
+                shutil.copytree(item, target)
+            else:
+                shutil.copy2(item, target)
 
 
 _run_pymupdf = run_pymupdf

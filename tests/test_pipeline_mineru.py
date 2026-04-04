@@ -127,6 +127,42 @@ def test_batch_convert_pdfs_falls_back_without_cloud_key(tmp_path, monkeypatch):
     assert (paper_dir / "paper.md").read_text(encoding="utf-8") == "fallback batch ok\n"
 
 
+def test_batch_convert_pdfs_fallback_cleans_noncanonical_source_pdf(tmp_path, monkeypatch):
+    paper_dir = tmp_path / "papers" / "Smith-2023-Test"
+    paper_dir.mkdir(parents=True)
+    (paper_dir / "meta.json").write_text("{}", encoding="utf-8")
+    pdf = paper_dir / "source.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n")
+
+    cfg = Config()
+    cfg._root = tmp_path
+    cfg.paths.papers_dir = "papers"
+    monkeypatch.setattr(cfg, "resolved_mineru_api_key", lambda: "")
+
+    import scholaraio.ingest.mineru as mineru
+    import scholaraio.ingest.pdf_fallback as pdf_fallback
+    import scholaraio.ingest.pipeline as pipeline
+
+    monkeypatch.setattr(mineru, "check_server", lambda *_: False)
+    monkeypatch.setattr(pipeline, "_batch_postprocess", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        pdf_fallback,
+        "convert_pdf_with_fallback",
+        lambda _pdf, md_path, **_kwargs: (
+            md_path.write_text("fallback batch ok\n", encoding="utf-8"),
+            True,
+            "docling",
+            None,
+        )[1:],
+    )
+
+    stats = batch_convert_pdfs(cfg, enrich=False)
+
+    assert stats == {"converted": 1, "failed": 0, "skipped": 0}
+    assert (paper_dir / "paper.md").read_text(encoding="utf-8") == "fallback batch ok\n"
+    assert not pdf.exists()
+
+
 def test_step_mineru_prefers_docling_when_configured(tmp_path, monkeypatch):
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")

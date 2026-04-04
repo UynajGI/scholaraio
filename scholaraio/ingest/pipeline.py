@@ -1530,6 +1530,8 @@ def batch_convert_pdfs(
             ui(f"  {pdir.name}: fallback 失败: {err}")
             stats["failed"] += 1
             return False
+        if pdf_path.exists() and pdf_path.name != "paper.pdf":
+            pdf_path.unlink()
         ui(f"  {pdir.name}: 已降级使用 {parser_name}")
         converted_dirs.append(pdir)
         stats["converted"] += 1

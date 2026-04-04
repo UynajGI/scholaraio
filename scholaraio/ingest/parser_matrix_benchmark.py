@@ -377,8 +377,9 @@ def _run_mineru_cloud(pdf_path: Path, md_path: Path, raw_dir: Path, cfg: RunConf
     }
     if res.success and res.md_path and res.md_path.exists():
         selected = res.md_path
+        content = selected.read_text(encoding="utf-8", errors="ignore")
         copy_parser_assets(selected, md_path)
-        md_path.write_text(selected.read_text(encoding="utf-8", errors="ignore"), encoding="utf-8")
+        md_path.write_text(content, encoding="utf-8")
     return result
 
 
@@ -403,8 +404,9 @@ def _run_mineru_local(pdf_path: Path, md_path: Path, raw_dir: Path, cfg: RunConf
     }
     if res.success and res.md_path and res.md_path.exists():
         selected = res.md_path
+        content = selected.read_text(encoding="utf-8", errors="ignore")
         copy_parser_assets(selected, md_path)
-        md_path.write_text(selected.read_text(encoding="utf-8", errors="ignore"), encoding="utf-8")
+        md_path.write_text(content, encoding="utf-8")
     return result
 
 

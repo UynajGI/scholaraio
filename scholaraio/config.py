@@ -494,14 +494,16 @@ def _normalize_choice(value: object, *, default: str, valid: set[str], field_nam
 
 def _normalize_mineru_pdf_cloud_model_version(value: object) -> str:
     """Normalize MinerU cloud model_version for ScholarAIO's PDF-only ingest flow."""
-    text = str(value or "").strip()
-    if not text:
+    raw_text = str(value or "").strip()
+    if not raw_text:
         return "pipeline"
-    if text in VALID_PDF_CLOUD_MODEL_VERSIONS:
-        return text
-    if text == "MinerU-HTML":
+    text = raw_text.lower()
+    if text == "mineru-html":
         _log.warning("MinerU-HTML is for HTML parsing, not PDF ingest; fallback to pipeline")
         return "pipeline"
+    valid_versions = {version.lower() for version in VALID_PDF_CLOUD_MODEL_VERSIONS}
+    if text in valid_versions:
+        return text
     _log.warning("invalid ingest.mineru_model_version_cloud=%r, fallback to pipeline", value)
     return "pipeline"
 

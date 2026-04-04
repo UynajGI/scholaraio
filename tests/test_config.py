@@ -181,6 +181,10 @@ class TestBuildConfig:
         cfg = _build_config({"ingest": {"mineru_lang": " EN "}}, tmp_path)
         assert cfg.ingest.mineru_lang == "en"
 
+    def test_mineru_cloud_model_version_is_case_insensitive(self, tmp_path):
+        cfg = _build_config({"ingest": {"mineru_model_version_cloud": " VLM "}}, tmp_path)
+        assert cfg.ingest.mineru_model_version_cloud == "vlm"
+
     def test_zero_or_negative_mineru_batch_size_uses_default(self, tmp_path):
         cfg = _build_config({"ingest": {"mineru_batch_size": 0}}, tmp_path)
         assert cfg.ingest.mineru_batch_size == 20

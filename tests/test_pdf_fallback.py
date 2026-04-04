@@ -86,6 +86,30 @@ def test_pick_and_write_md_preserves_leading_whitespace(tmp_path):
     assert md.read_text(encoding="utf-8") == "    code block line\n\nparagraph\n"
 
 
+def test_copy_parser_assets_replaces_stale_output_assets(tmp_path):
+    src_dir = tmp_path / "src"
+    src_images = src_dir / "images"
+    src_images.mkdir(parents=True)
+    selected = src_dir / "paper.md"
+    selected.write_text("![fig](images/new.png)\n", encoding="utf-8")
+    (src_images / "new.png").write_bytes(b"new")
+
+    dst_dir = tmp_path / "dst"
+    dst_dir.mkdir()
+    md = dst_dir / "paper.md"
+    md.write_text("old\n", encoding="utf-8")
+    stale_images = dst_dir / "images"
+    stale_images.mkdir()
+    (stale_images / "old.png").write_bytes(b"old")
+    (dst_dir / "stale.txt").write_text("stale\n", encoding="utf-8")
+
+    pdf_fallback.copy_parser_assets(selected, md)
+
+    assert (dst_dir / "images" / "new.png").read_bytes() == b"new"
+    assert not (dst_dir / "images" / "old.png").exists()
+    assert not (dst_dir / "stale.txt").exists()
+
+
 def test_public_pdf_fallback_helpers_are_available():
     assert callable(pdf_fallback.run_pymupdf)
     assert callable(pdf_fallback.pick_and_write_md)
