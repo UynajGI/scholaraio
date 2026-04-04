@@ -116,6 +116,27 @@ def test_build_proceedings_index_incremental_mode_replaces_existing_rows(tmp_pat
     assert len(results) == 2
 
 
+def test_build_proceedings_index_incremental_mode_replaces_rows_after_paper_id_changes(tmp_path: Path):
+    proceedings_root = _write_proceedings_fixture(tmp_path)
+    db_path = tmp_path / "proceedings.db"
+    papers_dir = proceedings_root / "Zheng-2024-IUTAM" / "papers"
+
+    first = build_proceedings_index(proceedings_root, db_path, rebuild=True)
+
+    alpha_meta_path = papers_dir / "Alpha-2024-Waves" / "meta.json"
+    alpha_meta = json.loads(alpha_meta_path.read_text(encoding="utf-8"))
+    alpha_meta["id"] = "proc-paper-1-rebuilt"
+    alpha_meta_path.write_text(json.dumps(alpha_meta, ensure_ascii=False), encoding="utf-8")
+
+    second = build_proceedings_index(proceedings_root, db_path, rebuild=False)
+    results = search_proceedings("granular", db_path, top_k=10)
+
+    assert first == 2
+    assert second == 2
+    assert len(results) == 2
+    assert {r["paper_id"] for r in results} == {"proc-paper-1-rebuilt", "proc-paper-2"}
+
+
 def test_detect_proceedings_manual_mode_forces_true(tmp_path: Path):
     md_path = tmp_path / "volume.md"
     md_path.write_text("A perfectly ordinary paper body.", encoding="utf-8")

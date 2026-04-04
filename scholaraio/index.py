@@ -393,7 +393,7 @@ def _ensure_fts_table(conn: sqlite3.Connection) -> None:
 def _ensure_proceedings_fts_table(conn: sqlite3.Connection) -> None:
     has_table = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='proceedings_fts'").fetchone()
     if not has_table:
-        raise FileNotFoundError("Proceedings FTS5 索引表不存在，请先构建 proceedings 索引")
+        raise FileNotFoundError("论文集 FTS5 索引表不存在，请先构建论文集索引")
 
 
 def build_proceedings_index(proceedings_root: Path, db_path: Path, rebuild: bool = False) -> int:
@@ -408,15 +408,19 @@ def build_proceedings_index(proceedings_root: Path, db_path: Path, rebuild: bool
             conn.execute("DELETE FROM proceedings_fts")
 
         count = 0
+        cleared_proceedings: set[str] = set()
         for row in iter_proceedings_papers(proceedings_root):
             if not rebuild:
-                conn.execute(
-                    """
-                    DELETE FROM proceedings_fts
-                    WHERE paper_id = ? AND proceeding_id = ?
-                    """,
-                    (row["paper_id"], row["proceeding_id"]),
-                )
+                proceeding_id = row["proceeding_id"]
+                if proceeding_id not in cleared_proceedings:
+                    conn.execute(
+                        """
+                        DELETE FROM proceedings_fts
+                        WHERE proceeding_id = ?
+                        """,
+                        (proceeding_id,),
+                    )
+                    cleared_proceedings.add(proceeding_id)
             conn.execute(
                 """
                 INSERT INTO proceedings_fts
