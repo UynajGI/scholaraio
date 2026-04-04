@@ -187,7 +187,7 @@ PDF → MinerU → 结构化 Markdown（图表 + LaTeX 公式保留）
 
 完整配置参考 → [`config.yaml`](config.yaml)
 
-## 三种使用方式
+## 两种使用方式
 
 | 模式 | 适用场景 | 命令 |
 |------|---------|------|
@@ -263,7 +263,7 @@ scholaraio rename             标准化目录名
 scholaraio migrate-dirs       迁移旧版目录结构
 scholaraio setup              环境配置向导（默认进入向导，`check` 只做诊断）
 scholaraio metrics            查看 LLM 用量统计
-scholaraio insights           阅读行为分析
+scholaraio insights [--days N] 阅读行为分析
 ```
 
 </details>

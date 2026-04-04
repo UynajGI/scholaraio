@@ -36,6 +36,7 @@ nav:
       - Ingestion: guide/ingestion.md
       - Writing: guide/writing.md
       - Webtools Integration: guide/webtools-integration.md
+  - API Reference: api/index.md
   - Contributing: contributing.md
   - Changelog: changelog.md
 

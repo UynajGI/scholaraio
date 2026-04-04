@@ -264,7 +264,7 @@ scholaraio rename             Standardize directory names
 scholaraio migrate-dirs       Migrate legacy directory structure
 scholaraio setup              Setup wizard
 scholaraio metrics            View LLM usage stats
-scholaraio insights           Reading behavior analytics
+scholaraio insights [--days N] Reading behavior analytics
 ```
 
 </details>
