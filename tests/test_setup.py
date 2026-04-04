@@ -220,3 +220,14 @@ def test_wizard_keys_handles_non_mapping_local_config(tmp_path, monkeypatch):
 
     local_cfg = (tmp_path / "config.local.yaml").read_text(encoding="utf-8")
     assert "pdf_preferred_parser: docling" in local_cfg
+
+
+def test_wizard_keys_handles_null_llm_section(tmp_path, monkeypatch):
+    (tmp_path / "config.local.yaml").write_text("llm: null\n", encoding="utf-8")
+    answers = iter(["test-key", ""])
+    monkeypatch.setattr("builtins.input", lambda *_args, **_kwargs: next(answers))
+
+    _wizard_keys(tmp_path, "zh", ParserChoice(parser="docling", needs_mineru_key=False))
+
+    local_cfg = (tmp_path / "config.local.yaml").read_text(encoding="utf-8")
+    assert "api_key: test-key" in local_cfg

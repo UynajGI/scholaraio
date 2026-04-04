@@ -687,6 +687,15 @@ def _wizard_keys(root: Path, lang: Lang, parser_choice: ParserChoice | None = No
     else:
         ingest_local = ingest_local_raw
 
+    llm_local_raw = local_data.get("llm")
+    if not isinstance(llm_local_raw, dict):
+        llm_local: dict[str, object] = {}
+        local_data["llm"] = llm_local
+        if llm_local_raw is not None:
+            changed = True
+    else:
+        llm_local = llm_local_raw
+
     if parser_choice is not None and ingest_local.get("pdf_preferred_parser") != parser_choice.parser:
         ingest_local["pdf_preferred_parser"] = parser_choice.parser
         changed = True
@@ -695,7 +704,7 @@ def _wizard_keys(root: Path, lang: Lang, parser_choice: ParserChoice | None = No
     print(t("llm_key_prompt", lang))
     key = _prompt_text("  > ")
     if key:
-        local_data.setdefault("llm", {})["api_key"] = key
+        llm_local["api_key"] = key
         changed = True
 
     # MinerU key
