@@ -80,6 +80,8 @@ scholaraio proceedings apply-clean <proceeding_dir> <clean_plan.json>
 ```
 
    - 第一版支持的清洗动作是 `keep` / `rename` / `reclassify` / `drop`
+   - agent 在这一步还可以顺手删除明显不合理的标签行，例如假 `# Comment 2.`、假 `# Reporter ...`
+   - 这里的“删除标签”只针对明显错误的独立 heading/tag 行，不改正文段落内容
    - 推荐先做结构性清洗（保留/重命名/重分类/删除），再考虑作者、摘要、DOI 等元数据提纯
 
 6. Office 文件处理流程（`data/inbox-doc/` 中的 DOCX/XLSX/PPTX）：

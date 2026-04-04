@@ -247,6 +247,24 @@ def _paper_closing_lines(markdown: str, n: int = 6) -> list[str]:
     return lines[-n:]
 
 
+def _remove_bogus_heading_lines(markdown: str, remove_headings: list[str]) -> str:
+    if not remove_headings:
+        return markdown
+
+    targets = {_normalize_title_match_key(text) for text in remove_headings if str(text).strip()}
+    if not targets:
+        return markdown
+
+    cleaned_lines: list[str] = []
+    for line in markdown.splitlines():
+        if line.lstrip().startswith("#"):
+            heading = line.lstrip("#").strip()
+            if _normalize_title_match_key(heading) in targets:
+                continue
+        cleaned_lines.append(line)
+    return "\n".join(cleaned_lines)
+
+
 def _candidate_signals(title: str, markdown: str, meta: dict) -> list[str]:
     lowered_title = title.casefold()
     opening = _paper_opening_lines(markdown, n=12)
@@ -345,11 +363,16 @@ def apply_proceedings_clean_plan(proceeding_dir: Path, clean_plan: dict | Path) 
 
         meta_path = paper_dir / "meta.json"
         paper_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        paper_md_path = paper_dir / "paper.md"
+        paper_md = paper_md_path.read_text(encoding="utf-8", errors="replace")
         if entry.get("title"):
             paper_meta["title"] = str(entry["title"]).strip()
         if entry.get("paper_type"):
             paper_meta["paper_type"] = str(entry["paper_type"]).strip()
         meta_path.write_text(json.dumps(paper_meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        if entry.get("remove_headings"):
+            paper_md = _remove_bogus_heading_lines(paper_md, list(entry.get("remove_headings", [])))
+            paper_md_path.write_text(paper_md, encoding="utf-8")
 
         if action == "rename" and paper_meta.get("title"):
             new_dir = paper_dir.parent / _slugify(str(paper_meta["title"]))

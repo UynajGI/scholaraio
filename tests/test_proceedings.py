@@ -632,6 +632,51 @@ def test_apply_proceedings_clean_plan_renames_drops_and_reclassifies(tmp_path: P
     assert child_dirs[0].name == "Wave-Propagation-in-Porous-Media-Position-Paper"
 
 
+def test_apply_proceedings_clean_plan_removes_bogus_heading_tags_without_touching_body(tmp_path: Path):
+    proceedings_root = tmp_path / "data" / "proceedings"
+    proceedings_root.mkdir(parents=True, exist_ok=True)
+    md_path = tmp_path / "volume.md"
+    md_path.write_text(
+        "# Proceedings of the IUTAM Symposium on Granular Flow\n\n"
+        "# Cellular Automata and Massively Parallel Physics\n"
+        "C.E.Leith\n"
+        "Abstract. This paper discusses cellular automata for turbulence simulations.\n\n"
+        "# Comment 2.\n"
+        "# Reporter Laurence Keefe\n"
+        "Body paragraph.\n",
+        encoding="utf-8",
+    )
+    proceeding_dir = ingest_proceedings_markdown(proceedings_root, md_path, source_name="volume.pdf")
+    apply_proceedings_split_plan(
+        proceeding_dir,
+        {
+            "volume_title": "Proceedings of the IUTAM Symposium on Granular Flow",
+            "papers": [{"title": "Cellular Automata and Massively Parallel Physics", "start_line": 3, "end_line": 9}],
+        },
+    )
+
+    apply_proceedings_clean_plan(
+        proceeding_dir,
+        {
+            "papers": [
+                {
+                    "paper": "Cellular Automata and Massively Parallel Physics",
+                    "action": "keep",
+                    "remove_headings": ["Comment 2.", "Reporter Laurence Keefe"],
+                }
+            ]
+        },
+    )
+
+    paper_dir = next((proceeding_dir / "papers").iterdir())
+    paper_md = (paper_dir / "paper.md").read_text(encoding="utf-8")
+
+    assert "# Comment 2." not in paper_md
+    assert "# Reporter Laurence Keefe" not in paper_md
+    assert "Body paragraph." in paper_md
+    assert "Abstract. This paper discusses cellular automata for turbulence simulations." in paper_md
+
+
 def test_cli_proceedings_clean_commands_build_and_apply(tmp_path: Path, monkeypatch):
     cfg = _build_config({"ingest": {"extractor": "regex"}}, tmp_path)
     cfg.ensure_dirs()
