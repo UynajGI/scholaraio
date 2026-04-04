@@ -157,17 +157,20 @@ def remove(ws_dir: Path, paper_refs: list[str], db_path: Path) -> list[dict]:
 
     entries = _read(ws_dir)
     remove_ids: set[str] = set()
+    remove_dir_names: set[str] = set()
     for ref in paper_refs:
         record = lookup_paper(db_path, ref)
         if record:
             remove_ids.add(record["id"])
         else:
-            # Try direct UUID match
+            # Fall back to exact workspace-visible identifiers when the index is stale
+            # or unavailable, so users can still remove items they see in `ws show`.
             remove_ids.add(ref)
+            remove_dir_names.add(ref)
 
-    removed = [e for e in entries if e["id"] in remove_ids]
+    removed = [e for e in entries if e["id"] in remove_ids or e.get("dir_name") in remove_dir_names]
     if removed:
-        entries = [e for e in entries if e["id"] not in remove_ids]
+        entries = [e for e in entries if e["id"] not in remove_ids and e.get("dir_name") not in remove_dir_names]
         _write(ws_dir, entries)
     return removed
 

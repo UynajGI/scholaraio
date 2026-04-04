@@ -1145,6 +1145,7 @@ def _parse_qe_def(filepath: Path) -> list[dict]:
 
     def _parse_var_block(block: str, var_name: str) -> dict:
         """Parse a var {...} block, extracting type, default, info, options."""
+
         def _match_braced(field: str) -> str:
             match = re.search(rf"{field}\s*\{{", block)
             if not match:

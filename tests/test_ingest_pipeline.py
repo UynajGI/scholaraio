@@ -8,7 +8,14 @@ from types import SimpleNamespace
 
 from scholaraio.ingest.metadata._api import query_semantic_scholar
 from scholaraio.ingest.metadata._models import PaperMetadata
-from scholaraio.ingest.pipeline import InboxCtx, StepResult, _collect_existing_ids, step_dedup, step_extract, step_office_convert
+from scholaraio.ingest.pipeline import (
+    InboxCtx,
+    StepResult,
+    _collect_existing_ids,
+    step_dedup,
+    step_extract,
+    step_office_convert,
+)
 
 
 class _DummyResponse:

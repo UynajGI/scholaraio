@@ -764,6 +764,9 @@ def step_translate(json_path: Path, cfg: Config, opts: dict) -> StepResult:
         return StepResult.SKIP
     force = opts.get("force", False)
     tr = translate_paper(paper_d, cfg, target_lang=target_lang, force=force)
+    if tr.partial:
+        ui(f"  翻译中断: 已完成 {tr.completed_chunks}/{tr.total_chunks} 块，可稍后继续续翻")
+        return StepResult.FAIL
     if not tr.ok:
         return StepResult.SKIP
     ui(f"  已翻译: {tr.path.name}")  # type: ignore[union-attr]

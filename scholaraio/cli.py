@@ -52,6 +52,7 @@ cli.py — scholaraio 命令行入口
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 import tempfile
@@ -566,6 +567,7 @@ def cmd_enrich_toc(args: argparse.Namespace, cfg) -> None:
             continue
 
         ui(f"\n{json_path.parent.name}")
+        ui("  开始提取 TOC...")
         success = enrich_toc(
             json_path,
             md_path,
@@ -575,8 +577,14 @@ def cmd_enrich_toc(args: argparse.Namespace, cfg) -> None:
         )
         if success:
             ok += 1
+            try:
+                data = json.loads(json_path.read_text(encoding="utf-8"))
+                ui(f"  TOC 提取完成: {len(data.get('toc', []))} 节")
+            except (OSError, json.JSONDecodeError):
+                ui("  TOC 提取完成")
         else:
             fail += 1
+            ui("  TOC 提取失败")
 
     if args.all or len(targets) > 1:
         ui(f"\n完成: {ok} 成功 | {fail} 失败 | {skip} 跳过")
@@ -882,11 +890,23 @@ def cmd_translate(args: argparse.Namespace, cfg) -> None:
 
     if args.paper_id:
         paper_d = _resolve_paper(args.paper_id, cfg)
-        tr = translate_paper(paper_d, cfg, target_lang=target_lang, force=args.force)
+        tr = translate_paper(
+            paper_d,
+            cfg,
+            target_lang=target_lang,
+            force=args.force,
+            progress_callback=ui,
+        )
         if tr.ok:
             ui(f"翻译完成: {tr.path}")
         else:
-            from scholaraio.translate import SKIP_ALREADY_EXISTS, SKIP_EMPTY, SKIP_NO_MD, SKIP_SAME_LANG
+            from scholaraio.translate import (
+                SKIP_ALL_CHUNKS_FAILED,
+                SKIP_ALREADY_EXISTS,
+                SKIP_EMPTY,
+                SKIP_NO_MD,
+                SKIP_SAME_LANG,
+            )
 
             _skip_messages = {
                 SKIP_NO_MD: "跳过: 该论文目录下无 paper.md 文件",
@@ -894,6 +914,15 @@ def cmd_translate(args: argparse.Namespace, cfg) -> None:
                 SKIP_SAME_LANG: f"跳过: 论文已是目标语言 ({target_lang})",
                 SKIP_ALREADY_EXISTS: "跳过: 翻译已存在（使用 --force 强制重新翻译）",
             }
+            if tr.partial and tr.path:
+                ui(
+                    f"翻译中断：已完成 {tr.completed_chunks}/{tr.total_chunks} 块，"
+                    f"当前结果已写入 {tr.path}，可稍后继续续翻"
+                )
+                sys.exit(1)
+            if tr.skip_reason == SKIP_ALL_CHUNKS_FAILED:
+                ui("翻译失败: 所有分块都翻译失败，未写出目标文件")
+                sys.exit(1)
             ui(_skip_messages.get(tr.skip_reason, "跳过"))
     elif args.all:
         ui(f"批量翻译 → {target_lang}")

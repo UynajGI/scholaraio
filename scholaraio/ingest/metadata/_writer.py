@@ -141,6 +141,8 @@ def refetch_metadata(json_path: Path) -> bool:
     )
     # Restore existing IDs
     ids = data.get("ids", {})
+    old_citation_count = data.get("citation_count", {})
+    old_api_sources = list(data.get("api_sources", []))
     meta.s2_paper_id = ids.get("semantic_scholar", "")
     meta.openalex_id = ids.get("openalex", "")
     meta.crossref_doi = ids.get("doi", "")
@@ -148,6 +150,12 @@ def refetch_metadata(json_path: Path) -> bool:
     meta.publication_number = ids.get("patent_publication_number", "")
 
     enrich_metadata(meta)
+
+    if not meta.api_sources:
+        meta.citation_count_crossref = old_citation_count.get("crossref")
+        meta.citation_count_s2 = old_citation_count.get("semantic_scholar")
+        meta.citation_count_openalex = old_citation_count.get("openalex")
+        meta.api_sources = old_api_sources
 
     new_data = metadata_to_dict(meta)
 
@@ -157,7 +165,41 @@ def refetch_metadata(json_path: Path) -> bool:
             new_data[key] = data[key]
 
     # Check if anything changed
+    def _normalize_ids_for_compare(ids_dict: dict | None) -> dict:
+        ids_norm = dict(ids_dict or {})
+        doi = ids_norm.get("doi", "")
+        if doi and "doi_url" not in ids_norm:
+            ids_norm["doi_url"] = f"https://doi.org/{doi}"
+        arxiv = ids_norm.get("arxiv", "")
+        if arxiv and "arxiv_url" not in ids_norm:
+            ids_norm["arxiv_url"] = f"https://arxiv.org/abs/{arxiv}"
+        s2 = ids_norm.get("semantic_scholar", "")
+        if s2 and "semantic_scholar_url" not in ids_norm:
+            ids_norm["semantic_scholar_url"] = f"https://www.semanticscholar.org/paper/{s2}"
+        oa = ids_norm.get("openalex", "")
+        if oa and "openalex_url" not in ids_norm:
+            ids_norm["openalex_url"] = (
+                oa.replace("https://openalex.org/", "https://openalex.org/works/")
+                if "openalex.org" in oa and "/works/" not in oa
+                else oa
+            )
+        return ids_norm
+
     changed = False
+    string_like_keys = {
+        "title",
+        "first_author",
+        "first_author_lastname",
+        "doi",
+        "journal",
+        "abstract",
+        "paper_type",
+        "volume",
+        "issue",
+        "pages",
+        "publisher",
+        "issn",
+    }
     for key in (
         "title",
         "authors",
@@ -178,7 +220,15 @@ def refetch_metadata(json_path: Path) -> bool:
         "issn",
         "references",
     ):
-        if new_data.get(key) != data.get(key):
+        old_value = data.get(key)
+        new_value = new_data.get(key)
+        if key in string_like_keys:
+            old_value = old_value or ""
+            new_value = new_value or ""
+        elif key == "ids":
+            old_value = _normalize_ids_for_compare(old_value)
+            new_value = _normalize_ids_for_compare(new_value)
+        if new_value != old_value:
             changed = True
             break
 

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
 
 from scholaraio import cli
 from scholaraio.setup import _S
+from scholaraio.translate import TranslateResult
 
 
 class TestSetupImportHints:
@@ -269,6 +271,60 @@ class TestArxivCommands:
         cli.cmd_arxiv_fetch(args, cfg)
 
         assert any("arXiv 下载失败" in m for m in messages)
+
+
+class TestTranslateCliProgress:
+    def test_cmd_translate_reports_resumable_partial_progress(self, tmp_papers, monkeypatch):
+        messages: list[str] = []
+        monkeypatch.setattr(cli, "ui", messages.append)
+        monkeypatch.setattr(cli, "_resolve_paper", lambda paper_id, cfg: tmp_papers / paper_id)
+        monkeypatch.setattr(
+            "scholaraio.translate.translate_paper",
+            lambda *args, **kwargs: TranslateResult(
+                path=(tmp_papers / "Smith-2023-Turbulence" / "paper_zh.md"),
+                partial=True,
+                completed_chunks=2,
+                total_chunks=5,
+            ),
+        )
+
+        cfg = SimpleNamespace(
+            papers_dir=tmp_papers,
+            translate=SimpleNamespace(target_lang="zh"),
+        )
+        args = Namespace(paper_id="Smith-2023-Turbulence", lang="zh", force=True, all=False)
+
+        try:
+            cli.cmd_translate(args, cfg)
+        except SystemExit as exc:
+            assert exc.code == 1
+        else:
+            raise AssertionError("expected SystemExit")
+
+        assert any("已完成 2/5 块" in m for m in messages)
+        assert any("可稍后继续续翻" in m for m in messages)
+
+
+class TestEnrichTocCliProgress:
+    def test_cmd_enrich_toc_reports_single_paper_success(self, tmp_papers, monkeypatch):
+        messages: list[str] = []
+        monkeypatch.setattr(cli, "ui", messages.append)
+
+        def fake_enrich_toc(json_path, md_path, cfg, *, force=False, inspect=False):
+            data = json.loads(json_path.read_text(encoding="utf-8"))
+            data["toc"] = [{"line": 1, "level": 1, "title": "Introduction"}]
+            json_path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            return True
+
+        monkeypatch.setattr("scholaraio.loader.enrich_toc", fake_enrich_toc)
+
+        cfg = SimpleNamespace(papers_dir=tmp_papers)
+        args = Namespace(all=False, paper_id="Smith-2023-Turbulence", force=True, inspect=False)
+
+        cli.cmd_enrich_toc(args, cfg)
+
+        assert any("开始提取 TOC" in m for m in messages)
+        assert any("TOC 提取完成" in m and "1 节" in m for m in messages)
 
 
 class TestImportEndnoteOptionalDeps:
