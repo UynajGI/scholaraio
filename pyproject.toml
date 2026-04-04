@@ -68,6 +68,7 @@ full = [
     "scholaraio[import]",
     "scholaraio[pdf]",
     "scholaraio[office]",
+    "scholaraio[draw]",
     "modelscope>=1.10",
     "curl-cffi>=0.5",
 ]

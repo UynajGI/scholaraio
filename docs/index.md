@@ -13,7 +13,9 @@ ScholarAIO is a research terminal built around AI coding agents. You interact wi
 - **BibTeX Export**: Filtered export with standard citation formats
 - **Literature Exploration**: Multi-dimensional OpenAlex queries with isolated data
 - **Workspace Management**: Organize papers into subsets for focused work
-- **26 Agent Skills**: Literature review, paper writing, gap analysis, and more
+- **Federated Discovery**: Search your library, explore silos, and arXiv in one flow
+- **Scientific Tool Docs**: Query indexed official docs for scientific computing tools with `toolref`
+- **Agent Skills**: Reusable workflows for search, writing, scientific runtime, and more
 
 ## Quick Start
 
