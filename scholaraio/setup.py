@@ -9,6 +9,8 @@ setup.py — ScholarAIO 环境检测与交互式安装向导
 
 from __future__ import annotations
 
+import contextlib
+import io
 import importlib
 import shutil
 import subprocess
@@ -33,6 +35,9 @@ _S: dict[str, dict[Lang, str]] = {
     "embed_deps": {"en": "Embed deps", "zh": "嵌入依赖"},
     "topics_deps": {"en": "Topics deps", "zh": "主题依赖"},
     "import_deps": {"en": "Import deps", "zh": "导入依赖"},
+    "pdf_deps": {"en": "PDF deps", "zh": "PDF 依赖"},
+    "office_deps": {"en": "Office deps", "zh": "Office 依赖"},
+    "draw_deps": {"en": "Draw deps", "zh": "绘图依赖"},
     "config_yaml": {"en": "config.yaml", "zh": "config.yaml"},
     "llm_key": {"en": "LLM API key", "zh": "LLM API key"},
     "mineru": {"en": "MinerU", "zh": "MinerU"},
@@ -248,7 +253,17 @@ _DEP_GROUPS: dict[str, list[tuple[str, str]]] = {
     "embed": [("sentence_transformers", "sentence-transformers"), ("faiss", "faiss-cpu"), ("numpy", "numpy")],
     "topics": [("bertopic", "bertopic"), ("pandas", "pandas")],
     "import": [("endnote_utils", "endnote-utils"), ("pyzotero", "pyzotero")],
+    "pdf": [("fitz", "pymupdf")],
+    "office": [
+        ("markitdown", "markitdown[docx,pptx,xlsx]"),
+        ("docx", "python-docx"),
+        ("pptx", "python-pptx"),
+        ("openpyxl", "openpyxl"),
+    ],
+    "draw": [("mermaid", "mermaid-py"), ("cli_anything", "cli-anything-inkscape")],
 }
+
+_SPEC_ONLY_IMPORTS = {"sentence_transformers", "faiss", "numpy"}
 
 
 @dataclass
@@ -264,7 +279,7 @@ def check_dep_group(group: str) -> DepGroupStatus:
     """Check if all packages in a dependency group are importable.
 
     Args:
-        group: Dependency group name (core/embed/topics/import).
+        group: Dependency group name (core/embed/topics/import/pdf/office/draw).
 
     Returns:
         DepGroupStatus with installed flag and list of missing pip package names.
@@ -273,7 +288,12 @@ def check_dep_group(group: str) -> DepGroupStatus:
     missing = []
     for import_name, pip_name in pairs:
         try:
-            importlib.import_module(import_name)
+            if import_name in _SPEC_ONLY_IMPORTS:
+                if importlib.util.find_spec(import_name) is None:
+                    missing.append(pip_name)
+                continue
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                importlib.import_module(import_name)
         except (ImportError, RuntimeError):
             missing.append(pip_name)
     return DepGroupStatus(name=group, installed=not missing, missing=missing)
@@ -333,6 +353,9 @@ def run_check(cfg: Config | None = None, lang: Lang = "zh") -> list[CheckResult]
         ("embed", "embed_deps"),
         ("topics", "topics_deps"),
         ("import", "import_deps"),
+        ("pdf", "pdf_deps"),
+        ("office", "office_deps"),
+        ("draw", "draw_deps"),
     ]:
         status = check_dep_group(group)
         if status.installed:
@@ -568,7 +591,7 @@ def run_wizard(cfg: Config | None = None) -> None:
 
 def _wizard_deps(lang: Lang) -> None:
     """Check and optionally install missing dependency groups."""
-    for group in ("core", "embed", "topics", "import"):
+    for group in ("core", "embed", "topics", "import", "pdf", "office", "draw"):
         status = check_dep_group(group)
         label_key = f"{group}_deps"
         if status.installed:
