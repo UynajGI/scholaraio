@@ -43,7 +43,6 @@ Proceedings data should live under a new tree:
 data/proceedings/
 └── <Proceeding-Dir>/
     ├── meta.json
-    ├── source.pdf
     ├── proceeding.md
     ├── papers/
     │   └── <Paper-Dir>/

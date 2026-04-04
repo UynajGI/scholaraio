@@ -468,6 +468,26 @@ def test_split_candidates_include_case_insensitive_normalized_titles(tmp_path: P
     assert candidates["normalized_contents_titles"][0] == heading["normalized_text"]
 
 
+def test_split_candidates_extract_titles_from_table_of_contents_heading_variant(tmp_path: Path):
+    proceedings_root = tmp_path / "data" / "proceedings"
+    proceedings_root.mkdir(parents=True)
+    md_path = tmp_path / "volume.md"
+    md_path.write_text(
+        "# Proceedings of the IUTAM Symposium on Granular Flow\n\n"
+        "# Table of Contents\n\n"
+        "Wake of a Finite-Size Particle in Wall Turbulence Over a Rough Bed 16 Xing Li\n\n"
+        "# Wake of a Finite-Size Particle in Wall Turbulence Over a Rough Bed\n\n"
+        "Xing Li\n\n"
+        "Abstract. Example.\n",
+        encoding="utf-8",
+    )
+
+    proceeding_dir = ingest_proceedings_markdown(proceedings_root, md_path, source_name="volume.pdf")
+    candidates = json.loads((proceeding_dir / "split_candidates.json").read_text(encoding="utf-8"))
+
+    assert candidates["contents_titles"] == ["Wake of a Finite-Size Particle in Wall Turbulence Over a Rough Bed"]
+
+
 def test_pipeline_routes_manual_proceedings_inbox_to_proceedings_library(tmp_path: Path):
     cfg = _build_config({"ingest": {"extractor": "regex"}}, tmp_path)
     cfg.ensure_dirs()
@@ -564,6 +584,8 @@ def test_pipeline_dry_run_proceedings_detection_does_not_write_library(tmp_path:
     assert not any((tmp_path / "data" / "proceedings").iterdir())
     joined = "\n".join(messages)
     assert "dry-run 模式下跳过写入" in joined
+    assert "0 ingested" in joined
+    assert "1 skipped" in joined
 
 
 def test_pipeline_does_not_auto_route_thesis_inbox_to_proceedings(tmp_path: Path):
@@ -645,7 +667,7 @@ def test_fsearch_proceedings_scope_returns_proceedings_results(tmp_path: Path, m
     cli.cmd_fsearch(type("Args", (), {"query": ["granular"], "scope": "proceedings", "top": 10})(), cfg)
 
     joined = "\n".join(messages)
-    assert "── [proceedings] ──" in joined
+    assert "── [论文集] ──" in joined
     assert "proceedings:" in joined
     assert "Wave propagation in porous media" in joined
 

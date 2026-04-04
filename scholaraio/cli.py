@@ -2051,7 +2051,7 @@ def cmd_fsearch(args: argparse.Namespace, cfg) -> None:
                     ui()
 
         elif scope == "proceedings":
-            ui("── [proceedings] ──")
+            ui("── [论文集] ──")
             from scholaraio.index import search_proceedings
             from scholaraio.proceedings import proceedings_db_path
 

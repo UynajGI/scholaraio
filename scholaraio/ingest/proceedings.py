@@ -26,6 +26,7 @@ _TOC_PATTERNS = (
 _DOI_RE = re.compile(r"10\.\d{4,}/[^\s)]+", re.IGNORECASE)
 _HEADING_RE = re.compile(r"^(#{1,4})\s+(.+?)\s*$")
 _TOP_LEVEL_HEADING_RE = re.compile(r"^#\s+(.+)$", re.MULTILINE)
+_CONTENTS_HEADING_RE = re.compile(r"^#\s+(?:table of contents|contents)\s*$", re.MULTILINE | re.IGNORECASE)
 
 
 def looks_like_proceedings_text(text: str) -> bool:
@@ -154,7 +155,7 @@ def _extract_heading_outline(text: str) -> list[dict]:
 
 
 def _extract_contents_titles(text: str) -> list[str]:
-    contents_heading = re.search(r"^#\s+Contents\s*$", text, flags=re.MULTILINE)
+    contents_heading = _CONTENTS_HEADING_RE.search(text)
     if not contents_heading:
         return []
 
@@ -175,7 +176,7 @@ def _extract_contents_titles(text: str) -> list[str]:
 
 
 def _extract_contents_excerpt(text: str) -> str:
-    contents_heading = re.search(r"^#\s+Contents\s*$", text, flags=re.MULTILINE)
+    contents_heading = _CONTENTS_HEADING_RE.search(text)
     if not contents_heading:
         return ""
 

@@ -1124,7 +1124,8 @@ def _process_inbox(
             existing_arxiv_ids=existing_arxiv_ids,
         )
         if is_proceedings and ctx.md_path and _ingest_proceedings_ctx(ctx, force=True):
-            stats["ingested"] += 1
+            final_status = ctx.status if ctx.status != "pending" else "skipped"
+            stats[final_status] += 1
             continue
         for step_name in file_steps:
             with timer(f"pipeline.inbox.{step_name}", "step") as t:
