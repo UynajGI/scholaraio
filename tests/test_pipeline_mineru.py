@@ -642,7 +642,9 @@ def test_process_inbox_skips_cloud_batch_when_fallback_parser_is_preferred(tmp_p
     monkeypatch.setattr(
         mineru,
         "convert_pdfs_cloud_batch",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not use cloud batch when docling is preferred")),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("should not use cloud batch when docling is preferred")
+        ),
     )
 
     def fake_step_mineru(ctx):
