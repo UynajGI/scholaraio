@@ -1028,6 +1028,8 @@ def _process_inbox(
     # ---- Batch MinerU preflight (cloud only) ----
     mineru_time = 0.0
     long_pdf_stems: set[str] = set()  # stems of long PDFs excluded from batch
+    batch_retry_stems: set[str] = set()
+    batch_completed_stems: set[str] = set()
     if use_cloud_batch and needs_mineru and not dry_run:
         from scholaraio.ingest.mineru import _plan_cloud_chunking
 
@@ -1072,6 +1074,7 @@ def _process_inbox(
                 batch_size=cfg.ingest.mineru_batch_size,
             )
             mineru_time = time.time() - t_batch_start
+            expected_batch_stems = {pdf.stem for pdf in pdfs_to_convert}
             # Move namespaced assets back to per-stem structure
             for br in batch_results:
                 did = br.pdf_path.stem
@@ -1088,7 +1091,9 @@ def _process_inbox(
                             shutil.rmtree(target)
                         shutil.move(str(nested_images), str(target))
                 if not br.success:
+                    batch_retry_stems.add(did)
                     _log.error("MinerU batch failed for %s: %s", br.pdf_path.name, br.error)
+                    ui(f"  {br.pdf_path.name}: MinerU 批量预处理失败，后续将按单文件解析流重试")
                     continue
                 entry = entries.get(did)
                 if entry is not None and entry["md"] is None and br.md_path and br.md_path.exists():
@@ -1097,14 +1102,21 @@ def _process_inbox(
                         if normalize_batch_assets
                         else _flatten_cloud_batch_output(inbox_dir, did, br.md_path)
                     )
+                    batch_completed_stems.add(did)
+                else:
+                    batch_retry_stems.add(did)
+                    ui(f"  {br.pdf_path.name}: MinerU 批量预处理未生成有效 Markdown，后续将按单文件解析流重试")
+
+            missing_batch_stems = expected_batch_stems - batch_completed_stems - batch_retry_stems
+            if missing_batch_stems:
+                batch_retry_stems.update(missing_batch_stems)
+                for stem in sorted(missing_batch_stems):
+                    _log.error("MinerU batch missing result for %s.pdf", stem)
+                    ui(f"  {stem}.pdf: MinerU 批量预处理结果缺失，后续将按单文件解析流重试")
 
     # ---- Per-file pipeline (remaining steps, or all steps if local MinerU) ----
-    # If batch MinerU was used, skip mineru step per-file (md already exists)
-    # BUT keep mineru for long PDFs that were excluded from batch
     per_file_steps = inbox_steps
     batch_skip_mineru = use_cloud_batch and "mineru" in per_file_steps
-    if batch_skip_mineru and not long_pdf_stems:
-        per_file_steps = [s for s in per_file_steps if s != "mineru"]
 
     has_api = "dedup" in per_file_steps and not dry_run and not opts.get("no_api") and not is_thesis
     api_delay = 2.0 if has_api else 0
@@ -1131,12 +1143,11 @@ def _process_inbox(
             file_type = "MD"
         ui(f"\n{label_prefix}[{idx + 1}/{len(sorted_entries)}] {file_type}: {file_label}")
 
-        # For long PDFs excluded from batch, keep mineru step
         file_steps = per_file_steps
-        if batch_skip_mineru and long_pdf_stems and stem in long_pdf_stems:
-            file_steps = inbox_steps  # full steps including mineru
-        elif batch_skip_mineru and long_pdf_stems and stem not in long_pdf_stems:
-            file_steps = [s for s in per_file_steps if s != "mineru"]
+        if batch_skip_mineru:
+            needs_single_file_mineru = stem in long_pdf_stems or stem in batch_retry_stems
+            if not needs_single_file_mineru and paths["md"] is not None:
+                file_steps = [s for s in per_file_steps if s != "mineru"]
 
         # Inject office_path for office-only entries (no PDF) so downstream steps can clean up the source file
         file_opts = dict(opts)

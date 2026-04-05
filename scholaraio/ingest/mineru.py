@@ -380,6 +380,11 @@ CLOUD_API_URL = "https://mineru.net/api/v4"
 MINERU_OPEN_API_BIN = "mineru-open-api"
 
 
+def _cloud_cli_retry_attempts(opts: ConvertOptions) -> int:
+    """Return the number of CLI attempts for MinerU cloud extraction."""
+    return max(1, int(opts.upload_retries or DEFAULT_UPLOAD_RETRIES))
+
+
 def convert_pdf_cloud(
     pdf_path: Path,
     opts: ConvertOptions,
@@ -423,43 +428,62 @@ def convert_pdf_cloud(
     if api_key:
         env["MINERU_TOKEN"] = api_key
 
-    try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            cwd=str(pdf_path.parent),
-            env=env,
-            timeout=max(30, int(opts.poll_timeout or DEFAULT_POLL_TIMEOUT)) + 60,
-            check=False,
+    attempts = _cloud_cli_retry_attempts(opts)
+    for attempt in range(1, attempts + 1):
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                cwd=str(pdf_path.parent),
+                env=env,
+                timeout=max(30, int(opts.poll_timeout or DEFAULT_POLL_TIMEOUT)) + 60,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            result.error = f"mineru-open-api 执行超时: {exc}"
+        except OSError as exc:
+            result.error = f"无法启动 mineru-open-api: {exc}"
+            result.elapsed_seconds = time.time() - t0
+            return result
+        else:
+            if proc.returncode != 0:
+                detail = (proc.stderr or proc.stdout or "").strip()
+                result.error = f"mineru-open-api exit code {proc.returncode}: {detail or 'unknown error'}"
+            else:
+                actual_md_path = _locate_cloud_markdown_output(out_dir, pdf_path.stem)
+                if actual_md_path is None:
+                    detail = (proc.stderr or proc.stdout or "").strip()
+                    result.error = f"mineru-open-api 未生成 Markdown 输出: {detail or 'missing .md file'}"
+                else:
+                    result.md_path = actual_md_path
+                    result.success = True
+                    result.md_size = len(actual_md_path.read_bytes())
+                    result.elapsed_seconds = time.time() - t0
+                    _log.info(
+                        "-> [cloud-cli] %s (%s, %.1fs)",
+                        actual_md_path.name,
+                        _fmt_size(result.md_size),
+                        result.elapsed_seconds,
+                    )
+                    return result
+
+        if attempt >= attempts:
+            result.elapsed_seconds = time.time() - t0
+            return result
+
+        backoff_seconds = float(2 ** (attempt - 1))
+        _log.warning(
+            "mineru-open-api attempt %d/%d failed for %s: %s; retrying in %.1fs",
+            attempt,
+            attempts,
+            pdf_path.name,
+            result.error,
+            backoff_seconds,
         )
-    except subprocess.TimeoutExpired as exc:
-        result.error = f"mineru-open-api 执行超时: {exc}"
-        result.elapsed_seconds = time.time() - t0
-        return result
-    except OSError as exc:
-        result.error = f"无法启动 mineru-open-api: {exc}"
-        result.elapsed_seconds = time.time() - t0
-        return result
+        time.sleep(backoff_seconds)
 
-    if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "").strip()
-        result.error = f"mineru-open-api exit code {proc.returncode}: {detail or 'unknown error'}"
-        result.elapsed_seconds = time.time() - t0
-        return result
-
-    actual_md_path = _locate_cloud_markdown_output(out_dir, pdf_path.stem)
-    if actual_md_path is None:
-        detail = (proc.stderr or proc.stdout or "").strip()
-        result.error = f"mineru-open-api 未生成 Markdown 输出: {detail or 'missing .md file'}"
-        result.elapsed_seconds = time.time() - t0
-        return result
-
-    result.md_path = actual_md_path
-    result.success = True
-    result.md_size = len(actual_md_path.read_bytes())
     result.elapsed_seconds = time.time() - t0
-    _log.info("-> [cloud-cli] %s (%s, %.1fs)", actual_md_path.name, _fmt_size(result.md_size), result.elapsed_seconds)
     return result
 
 

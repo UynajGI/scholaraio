@@ -560,6 +560,66 @@ def test_process_inbox_cloud_batch_keeps_images_for_mineru_only(tmp_path, monkey
     assert not isolated_dir.exists()
 
 
+def test_process_inbox_cloud_batch_failure_retries_mineru_per_file(tmp_path, monkeypatch):
+    inbox_dir = tmp_path / "inbox"
+    inbox_dir.mkdir()
+    pdf = inbox_dir / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n")
+
+    cfg = Config()
+    cfg._root = tmp_path
+    monkeypatch.setattr(cfg, "resolved_mineru_api_key", lambda: "token")
+
+    import scholaraio.ingest.mineru as mineru
+    import scholaraio.ingest.pipeline as pipeline
+
+    mineru_calls: list[Path] = []
+    extract_seen: dict[str, Path | None] = {}
+    original_mineru = pipeline.STEPS["mineru"].fn
+    original_extract = pipeline.STEPS["extract"].fn
+
+    monkeypatch.setattr(mineru, "check_server", lambda *_: False)
+    monkeypatch.setattr(mineru, "_plan_cloud_chunking", lambda *_args, **_kwargs: (False, 600, ""))
+    monkeypatch.setattr(
+        mineru,
+        "convert_pdfs_cloud_batch",
+        lambda *_args, **_kwargs: [ConvertResult(pdf_path=pdf, success=False, error="timeout")],
+    )
+
+    def fake_step_mineru(ctx):
+        mineru_calls.append(ctx.pdf_path)
+        ctx.md_path = inbox_dir / "paper.md"
+        ctx.md_path.write_text("retried mineru ok\n", encoding="utf-8")
+        return StepResult.OK
+
+    def fake_extract(ctx):
+        extract_seen["md_path"] = ctx.md_path
+        ctx.status = "skipped"
+        return StepResult.OK
+
+    monkeypatch.setattr(pipeline.STEPS["mineru"], "fn", fake_step_mineru)
+    monkeypatch.setattr(pipeline.STEPS["extract"], "fn", fake_extract)
+
+    try:
+        _process_inbox(
+            inbox_dir,
+            tmp_path / "papers",
+            tmp_path / "pending",
+            {},
+            ["mineru", "extract"],
+            cfg,
+            {},
+            False,
+            [],
+        )
+    finally:
+        monkeypatch.setattr(pipeline.STEPS["mineru"], "fn", original_mineru)
+        monkeypatch.setattr(pipeline.STEPS["extract"], "fn", original_extract)
+
+    assert mineru_calls == [pdf]
+    assert extract_seen["md_path"] == inbox_dir / "paper.md"
+
+
 def test_step_mineru_prefers_docling_when_configured(tmp_path, monkeypatch):
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")

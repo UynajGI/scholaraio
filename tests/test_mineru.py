@@ -229,6 +229,40 @@ def test_convert_pdf_cloud_surfaces_cli_failure_details(tmp_path, monkeypatch):
     assert "timed out" in (result.error or "")
 
 
+def test_convert_pdf_cloud_retries_timeout_with_exponential_backoff(tmp_path, monkeypatch):
+    pdf_path = tmp_path / "paper.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4")
+    output_dir = tmp_path / "out"
+
+    attempts = {"count": 0}
+    sleeps: list[float] = []
+
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/mineru-open-api" if name == "mineru-open-api" else None)
+
+    def fake_run(cmd, *, capture_output, text, cwd, env, timeout, check):
+        attempts["count"] += 1
+        if attempts["count"] < 3:
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "paper.md").write_text("# ok after retry\n", encoding="utf-8")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr("scholaraio.ingest.mineru.time.sleep", lambda seconds: sleeps.append(seconds))
+
+    result = convert_pdf_cloud(
+        pdf_path,
+        ConvertOptions(output_dir=output_dir, upload_retries=3),
+        api_key="test-key",
+        cloud_url="https://mineru.net/api/v4",
+    )
+
+    assert result.success is True
+    assert attempts["count"] == 3
+    assert sleeps == [1.0, 2.0]
+    assert result.md_path == output_dir / "paper.md"
+
+
 def test_convert_pdfs_cloud_batch_splits_into_chunks(tmp_path, monkeypatch):
     pdf_paths: list[Path] = []
     for idx in range(3):
