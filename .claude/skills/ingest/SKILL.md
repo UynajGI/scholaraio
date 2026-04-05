@@ -102,7 +102,9 @@ scholaraio proceedings apply-clean <proceeding_dir> <clean_plan.json>
      - 是 thesis → 标记并入库
      - 不是 thesis → 转入 `data/pending/` 待人工确认
 
-9. 超长 PDF（>100 页）自动切分为短 PDF 分段转换后合并。
+9. 超长 PDF 会在 MinerU 转换前按需自动切分后合并：
+   - 本地 MinerU 按 `chunk_page_limit`（默认 >100 页）
+   - 云端 MinerU 同时遵循 `>600 页` 和 `>200MB` 两个限制，并在仅超大小时估算更安全的分片页数
 
 ## 示例
 
