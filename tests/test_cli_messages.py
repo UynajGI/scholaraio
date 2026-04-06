@@ -71,6 +71,13 @@ class TestCliHelpLocalization:
 
         assert "proceedings" in fsearch_help
 
+    def test_explore_help_mentions_multidimensional_exploration(self):
+        parser = cli._build_parser()
+        root_help = parser.format_help()
+
+        assert "多维文献探索" in root_help
+        assert "期刊全量探索" not in root_help
+
 
 class TestShowLayer4Headings:
     def test_translated_full_text_heading_uses_consistent_spacing(self, tmp_papers, monkeypatch):

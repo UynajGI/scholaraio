@@ -3257,7 +3257,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_repair.add_argument("--dry-run", action="store_true", help="预览，不实际修改")
 
     # --- explore ---
-    p_explore = sub.add_parser("explore", help="期刊全量探索（OpenAlex 拉取 + 嵌入 + 聚类）")
+    p_explore = sub.add_parser("explore", help="多维文献探索（OpenAlex 拉取 + 嵌入 + 聚类）")
     p_explore.set_defaults(func=cmd_explore)
     p_explore_sub = p_explore.add_subparsers(dest="explore_action", required=True)
 

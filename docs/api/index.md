@@ -79,3 +79,16 @@
         - translate_paper
         - batch_translate
         - detect_language
+
+::: scholaraio.explore
+    options:
+      members:
+        - fetch_explore
+        - build_explore_vectors
+        - build_explore_topics
+        - explore_search
+        - explore_vsearch
+        - explore_unified_search
+        - list_explore_libs
+        - explore_db_path
+        - validate_explore_name
