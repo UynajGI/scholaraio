@@ -26,6 +26,11 @@ tags: ["academic", "papers", "metadata", "enrichment", "llm"]
    - 用户说"全部" → 使用 `--all`
    - 可选 `--force` 覆盖已有结果
 
+> 批量模式说明：
+> - `--all` 会按 `config.llm.concurrency` 做多篇并发处理
+> - 并发只发生在“论文之间”，单篇内部提取逻辑不拆分并发
+> - 批量模式会对单篇失败自动做指数退避重试
+
 3. 执行命令：
 
 **提取目录：**
@@ -45,12 +50,13 @@ scholaraio backfill-abstract [--dry-run] [--doi-fetch]
 
 参数说明：
 - `--inspect` — 展示提取过程详情（调试用）
-- `--max-retries N` — L3 提取最大重试次数（默认 2）
+- `--max-retries N` — L3 单篇提取最大重试次数（默认 2）；`--all` 时也作为每篇论文的批量重试预算
 - `--doi-fetch` — 从出版商网页抓取官方 abstract（覆盖现有，需联网）
 
 4. 展示处理结果。
    - `enrich-toc` 现在会显示开始提取、是否成功、以及提取出的 TOC 节数
    - 单篇处理不再只是打印论文名
+   - 批量处理会显示并发 worker 数，以及最终的成功 / 失败 / 跳过汇总
 
 ## 示例
 

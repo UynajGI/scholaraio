@@ -54,10 +54,12 @@ cli.py — scholaraio 命令行入口
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import logging
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from scholaraio.config import load_config
@@ -560,33 +562,45 @@ def cmd_enrich_toc(args: argparse.Namespace, cfg) -> None:
         _log.error("请指定 <paper-id> 或 --all")
         sys.exit(1)
 
-    ok = fail = skip = 0
-    for json_path in targets:
-        md_path = json_path.parent / "paper.md"
-        if not md_path.exists():
-            _log.error("已跳过（缺少 paper.md）: %s", json_path.parent.name)
-            skip += 1
-            continue
-
-        ui(f"\n{json_path.parent.name}")
-        ui("  开始提取 TOC...")
-        success = enrich_toc(
-            json_path,
-            md_path,
+    if args.all:
+        ok, fail, skip = _run_batch_enrich(
+            targets,
             cfg,
-            force=args.force,
-            inspect=args.inspect,
+            worker_fn=lambda json_path, md_path: enrich_toc(
+                json_path,
+                md_path,
+                cfg,
+                force=args.force,
+                inspect=args.inspect,
+            ),
+            success_message=_toc_success_message,
+            failure_message="  TOC 提取失败",
+            max_retries=2,
         )
-        if success:
-            ok += 1
-            try:
-                data = json.loads(json_path.read_text(encoding="utf-8"))
-                ui(f"  TOC 提取完成: {len(data.get('toc', []))} 节")
-            except (OSError, json.JSONDecodeError):
-                ui("  TOC 提取完成")
-        else:
-            fail += 1
-            ui("  TOC 提取失败")
+    else:
+        ok = fail = skip = 0
+        for json_path in targets:
+            md_path = json_path.parent / "paper.md"
+            if not md_path.exists():
+                _log.error("已跳过（缺少 paper.md）: %s", json_path.parent.name)
+                skip += 1
+                continue
+
+            ui(f"\n{json_path.parent.name}")
+            ui("  开始提取 TOC...")
+            success = enrich_toc(
+                json_path,
+                md_path,
+                cfg,
+                force=args.force,
+                inspect=args.inspect,
+            )
+            if success:
+                ok += 1
+                ui(_toc_success_message(json_path))
+            else:
+                fail += 1
+                ui("  TOC 提取失败")
 
     if args.all or len(targets) > 1:
         ui(f"\n完成: {ok} 成功 | {fail} 失败 | {skip} 跳过")
@@ -646,30 +660,117 @@ def cmd_enrich_l3(args: argparse.Namespace, cfg) -> None:
         _log.error("请指定 <paper-id> 或 --all")
         sys.exit(1)
 
-    ok = fail = skip = 0
+    if args.all:
+        ok, fail, skip = _run_batch_enrich(
+            targets,
+            cfg,
+            worker_fn=lambda json_path, md_path: enrich_l3(
+                json_path,
+                md_path,
+                cfg,
+                force=args.force,
+                max_retries=args.max_retries,
+                inspect=args.inspect,
+            ),
+            success_message="  结论提取完成",
+            failure_message="  结论提取失败",
+            max_retries=args.max_retries,
+        )
+    else:
+        ok = fail = skip = 0
+        for json_path in targets:
+            md_path = json_path.parent / "paper.md"
+            if not md_path.exists():
+                _log.error("已跳过（缺少 paper.md）: %s", json_path.parent.name)
+                skip += 1
+                continue
+
+            ui(f"\n{json_path.parent.name}")
+            success = enrich_l3(
+                json_path,
+                md_path,
+                cfg,
+                force=args.force,
+                max_retries=args.max_retries,
+                inspect=args.inspect,
+            )
+            if success:
+                ok += 1
+                ui("  结论提取完成")
+            else:
+                fail += 1
+                ui("  结论提取失败")
+
+    if args.all or len(targets) > 1:
+        ui(f"\n完成: {ok} 成功 | {fail} 失败 | {skip} 跳过")
+
+
+def _toc_success_message(json_path: Path) -> str:
+    try:
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+        return f"  TOC 提取完成: {len(data.get('toc', []))} 节"
+    except (OSError, json.JSONDecodeError):
+        return "  TOC 提取完成"
+
+
+def _run_batch_enrich(
+    targets: list[Path],
+    cfg,
+    *,
+    worker_fn,
+    success_message: str | callable,
+    failure_message: str,
+    max_retries: int,
+) -> tuple[int, int, int]:
+    queued: list[tuple[Path, Path]] = []
+    skip = 0
     for json_path in targets:
         md_path = json_path.parent / "paper.md"
         if not md_path.exists():
             _log.error("已跳过（缺少 paper.md）: %s", json_path.parent.name)
             skip += 1
             continue
+        queued.append((json_path, md_path))
 
-        ui(f"\n{json_path.parent.name}")
-        success = enrich_l3(
-            json_path,
-            md_path,
-            cfg,
-            force=args.force,
-            max_retries=args.max_retries,
-            inspect=args.inspect,
-        )
-        if success:
-            ok += 1
-        else:
-            fail += 1
+    if not queued:
+        return 0, 0, skip
 
-    if args.all or len(targets) > 1:
-        ui(f"\n完成: {ok} 成功 | {fail} 失败 | {skip} 跳过")
+    workers = min(max(1, int(getattr(cfg.llm, "concurrency", 1))), len(queued))
+    ui(f"并发处理（{workers} workers，共 {len(queued)} 篇）...")
+
+    def _retry_one(json_path: Path, md_path: Path) -> tuple[Path, bool, int]:
+        for attempt in range(1, max_retries + 2):
+            try:
+                success = worker_fn(json_path, md_path)
+                if success:
+                    return json_path, True, attempt
+            except Exception as e:
+                _log.warning("批量富化失败（%s，第 %d 次）: %s", json_path.parent.name, attempt, e)
+            if attempt <= max_retries:
+                time.sleep(float(2 ** (attempt - 1)))
+        return json_path, False, max_retries + 1
+
+    ok = fail = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = []
+        for json_path, md_path in queued:
+            ui(f"\n{json_path.parent.name}")
+            ui("  开始处理...")
+            futures.append(pool.submit(_retry_one, json_path, md_path))
+        for future in concurrent.futures.as_completed(futures):
+            json_path, success, attempts = future.result()
+            if success:
+                ok += 1
+                if attempts > 1:
+                    ui(f"  重试后成功（共 {attempts} 次）")
+                ui(success_message(json_path) if callable(success_message) else success_message)
+            else:
+                fail += 1
+                if attempts > 1:
+                    ui(f"  已重试 {attempts - 1}/{max_retries} 次")
+                ui(failure_message)
+
+    return ok, fail, skip
 
 
 def cmd_top_cited(args: argparse.Namespace, cfg) -> None:
@@ -3012,7 +3113,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # --- show ---
     p_show = sub.add_parser("show", help="查看论文内容")
     p_show.set_defaults(func=cmd_show)
-    p_show.add_argument("paper_id", help="论文目录名（search 结果中显示）")
+    p_show.add_argument("paper_id", help="论文 ID（目录名 / UUID / DOI）")
     p_show.add_argument(
         "--layer",
         type=int,

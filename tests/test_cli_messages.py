@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 from argparse import Namespace
 from pathlib import Path
@@ -403,6 +404,105 @@ class TestEnrichTocCliProgress:
 
         assert any("开始提取 TOC" in m for m in messages)
         assert any("TOC 提取完成" in m and "1 节" in m for m in messages)
+
+    def test_cmd_enrich_toc_all_uses_llm_concurrency_budget(self, tmp_papers, monkeypatch):
+        messages: list[str] = []
+        monkeypatch.setattr(cli, "ui", messages.append)
+
+        max_workers_seen: list[int] = []
+        submitted: list[str] = []
+
+        class FakeExecutor:
+            def __init__(self, max_workers):
+                max_workers_seen.append(max_workers)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def submit(self, fn, *args, **kwargs):
+                submitted.append(args[0].parent.name)
+                fut = concurrent.futures.Future()
+                fut.set_result(fn(*args, **kwargs))
+                return fut
+
+        monkeypatch.setattr(cli.concurrent.futures, "ThreadPoolExecutor", FakeExecutor)
+        monkeypatch.setattr(cli.concurrent.futures, "as_completed", lambda futures: list(futures))
+
+        def fake_enrich_toc(json_path, md_path, cfg, *, force=False, inspect=False):
+            data = json.loads(json_path.read_text(encoding="utf-8"))
+            data["toc"] = [{"line": 1, "level": 1, "title": json_path.parent.name}]
+            json_path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            return True
+
+        monkeypatch.setattr("scholaraio.loader.enrich_toc", fake_enrich_toc)
+
+        cfg = SimpleNamespace(papers_dir=tmp_papers, llm=SimpleNamespace(concurrency=7))
+        args = Namespace(all=True, paper_id=None, force=True, inspect=False)
+
+        cli.cmd_enrich_toc(args, cfg)
+
+        assert max_workers_seen == [2]
+        assert submitted == [
+            "Smith-2023-Turbulence",
+            "Wang-2024-DeepLearning",
+        ]
+        assert any("完成: 2 成功 | 0 失败 | 0 跳过" in m for m in messages)
+
+
+class TestEnrichL3CliBatchRetries:
+    def test_cmd_enrich_l3_all_retries_failed_papers_with_backoff(self, tmp_papers, monkeypatch):
+        messages: list[str] = []
+        monkeypatch.setattr(cli, "ui", messages.append)
+
+        sleep_delays: list[float] = []
+        monkeypatch.setattr(cli.time, "sleep", sleep_delays.append)
+
+        attempts: dict[str, int] = {}
+
+        class FakeExecutor:
+            def __init__(self, max_workers):
+                self.max_workers = max_workers
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def submit(self, fn, *args, **kwargs):
+                fut = concurrent.futures.Future()
+                try:
+                    fut.set_result(fn(*args, **kwargs))
+                except Exception as exc:
+                    fut.set_exception(exc)
+                return fut
+
+        monkeypatch.setattr(cli.concurrent.futures, "ThreadPoolExecutor", FakeExecutor)
+        monkeypatch.setattr(cli.concurrent.futures, "as_completed", lambda futures: list(futures))
+
+        def fake_enrich_l3(json_path, md_path, cfg, *, force=False, max_retries=2, inspect=False):
+            name = json_path.parent.name
+            attempts[name] = attempts.get(name, 0) + 1
+            if name == "Smith-2023-Turbulence" and attempts[name] < 3:
+                raise TimeoutError("transient")
+            return True
+
+        monkeypatch.setattr("scholaraio.loader.enrich_l3", fake_enrich_l3)
+
+        cfg = SimpleNamespace(papers_dir=tmp_papers, llm=SimpleNamespace(concurrency=4))
+        args = Namespace(all=True, paper_id=None, force=True, inspect=False, max_retries=2)
+
+        cli.cmd_enrich_l3(args, cfg)
+
+        assert attempts == {
+            "Smith-2023-Turbulence": 3,
+            "Wang-2024-DeepLearning": 1,
+        }
+        assert sleep_delays == [1.0, 2.0]
+        assert any("完成: 2 成功 | 0 失败 | 0 跳过" in m for m in messages)
 
 
 class TestImportEndnoteOptionalDeps:

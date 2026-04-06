@@ -11,6 +11,12 @@
       members:
         - load_l1
         - load_l2
+        - load_l3
+        - load_l4
+        - load_notes
+        - append_notes
+        - enrich_toc
+        - enrich_l3
 
 ::: scholaraio.export
     options:
