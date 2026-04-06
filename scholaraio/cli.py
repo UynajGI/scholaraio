@@ -2836,7 +2836,7 @@ def cmd_attach_pdf(args: argparse.Namespace, cfg) -> None:
                     )
                 except ImportError as exc:
                     result = None
-                    ui(f"云端分片依赖缺失，尝试 fallback：{exc}。可安装 scholaraio[pdf] / pymupdf")
+                    ui(f"云端分片依赖缺失，尝试 fallback：{exc}。可安装 scholaraio[pdf]")
                 except Exception as exc:
                     result = None
                     ui(f"云端分片失败，尝试 fallback：{exc}")

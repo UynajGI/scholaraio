@@ -717,7 +717,7 @@ def _split_pdf(pdf_path: Path, chunk_size: int = DEFAULT_CHUNK_PAGES, output_dir
     try:
         import pymupdf
     except ImportError:
-        raise ImportError("pymupdf is required for splitting long PDFs. Install it with: pip install pymupdf")
+        raise ImportError("pymupdf is required for splitting long PDFs. Install it with: pip install scholaraio[pdf]")
 
     page_count = _get_pdf_page_count(pdf_path)
     if page_count <= chunk_size:
