@@ -498,8 +498,8 @@ This project supports multiple AI coding agents at the same time. `AGENTS.md` is
 | Agent | Instruction file | Skills |
 |-------|---------|--------|
 | Claude Code | `CLAUDE.md` | `.claude/skills/` |
-| Codex (OpenAI) | `AGENTS.md` (this file) | `.agents/skills/` -> `.claude/skills/` |
-| OpenClaw | `AGENTS.md` (this file) | `.agents/skills/` -> `.claude/skills/` |
+| Codex (OpenAI) | `AGENTS.md` | `.agents/skills/` -> `.claude/skills/` |
+| OpenClaw | `AGENTS.md` | `.agents/skills/` -> `.claude/skills/` |
 | Cursor | `.cursorrules` (wrapper -> points to `AGENTS.md`) | - |
 | Windsurf | `.windsurfrules` (wrapper -> points to `AGENTS.md`) | - |
 | GitHub Copilot | `.github/copilot-instructions.md` (wrapper -> points to `AGENTS.md`) | - |

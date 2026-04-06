@@ -39,7 +39,7 @@ You are not a passive tool waiting for instructions, but an active collaborator.
 
 ## Agent Skills
 
-Skills are defined in the `.claude/skills/` directory and follow the [Agent Skills](https://agentskills.io) open standard. Each skill is a folder containing a `SKILL.md` file (YAML frontmatter plus instructions). For Claude Code, `.claude/skills/` is the canonical source, and the repository-root `skills/` symlink is the main plugin-facing discovery entry; `.agents/skills` is kept for cross-agent compatibility.
+Skills are defined in the `.claude/skills/` directory and follow the [Agent Skills](https://agentskills.io) open standard. Each skill is a folder containing a `SKILL.md` file (YAML frontmatter plus instructions). `.agents/skills` and the repository-root `skills/` are both symlinks to `.claude/skills/`, exposing the same skill definitions to different agent and plugin discovery mechanisms.
 
 The right mental model is to treat skills as "reusable workflows": when the user's intent clearly matches a capability, read the corresponding `SKILL.md` first and follow the workflow already distilled there instead of inventing a process from scratch every time.
 
@@ -472,7 +472,7 @@ In plugin mode, all data lives under `~/.scholaraio/`:
 └── workspace/            # Workspaces
 ```
 
-In Claude Code plugin mode, skill discovery is centered on `.claude/skills/` and the `skills/` symlink. Exact invocation syntax can vary slightly by installation mode, but this repository guarantees that the underlying skill definitions live in `.claude/skills/`.
+The exact invocation form of skills depends on the host agent or plugin system; this repository only guarantees that skill definitions live in `.claude/skills/` and are exposed through the `.agents/skills` and `skills/` symlinks for different discovery mechanisms.
 
 ### API Key Notes
 
@@ -493,11 +493,11 @@ In Claude Code plugin mode, skill discovery is centered on `.claude/skills/` and
 
 ## Multi-Agent Compatibility
 
-This project supports multiple AI coding agents at the same time. `CLAUDE.md` is the Claude Code-compatible instruction file, while `AGENTS.md` is the general multi-agent version. The two files should keep their technical content as aligned as possible, differing only where agent-native discovery mechanisms, naming, or a very small number of entry-point instructions require it.
+This project supports multiple AI coding agents at the same time. `AGENTS.md` is the general project instruction file, while `CLAUDE.md` is the Claude Code-compatible version. The two files should keep their technical content as aligned as possible, differing only where agent-native discovery mechanisms, naming, or a very small number of entry-point instructions require it.
 
 | Agent | Instruction file | Skills |
 |-------|---------|--------|
-| Claude Code | `CLAUDE.md` (this file) | `.claude/skills/` |
+| Claude Code | `CLAUDE.md` | `.claude/skills/` |
 | Codex (OpenAI) | `AGENTS.md` | `.agents/skills/` -> `.claude/skills/` |
 | OpenClaw | `AGENTS.md` | `.agents/skills/` -> `.claude/skills/` |
 | Cursor | `.cursorrules` (wrapper -> points to `AGENTS.md`) | - |
